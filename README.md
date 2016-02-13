@@ -40,9 +40,9 @@ option       |  effect
 The _TYPE_ argument of `-K` is interpreted as follows:
 
 _TYPE_  |  type name    | default topic name  | resulting type
---------|---------------|-------------------------------------------
-`KS`    |  `KeyedSeq`   |  `PubSub`            | key (32-bit int), sequence number (unsigned 32-bit int), octet sequence
-`K32`   |  `Keyed32`    |  `PubSub32`          | key (32-bit int), sequence number (unsigned 32-bit int), octet array of length 32
+--------|---------------|---------------------|---------------------
+`KS`    |  `KeyedSeq`   |  `PubSub`           | key (32-bit int), sequence number (unsigned 32-bit int), octet sequence
+`K32`   |  `Keyed32`    |  `PubSub32`         | key (32-bit int), sequence number (unsigned 32-bit int), octet array of length 32
 `K64`   |  `Keyed64`    | `PubSub64`          | as K32, length 64
 `K128`  |  `Keyed128`   | `PubSub128`         | as K32, length 128
 `K256`  |  `Keyed256`   | `PubSub256`         | as K32, length 256
@@ -101,7 +101,7 @@ flag | entity type
 Specifying a QoS that is inapplicable to the entity type causes a warning, but is otherwise ignored. The _QOS_ field is then interpreted as a comma-separated list of QoS specifications, each of the form _Q_=_S_. In the below table, "{a,b}" means either of a and b, and "[a]" means a is optional:
 
 _Q_ | _S_          | applicability | meaning
-----|----------------------------
+----|--------------|---------------|---------------
 `A` | {a,p:_S_,w:_S_}  | t, r, w | set liveliness to: automatic, manual-per-participant, or manual-per-writer; _S_ is the lease duration
 `d` | {v,tl,t,p} | t, r, w | set the durability kind: volatile, transient-local, transient, or persistent
 `D` | _P_ | t, r, w | set deadline to _P_
@@ -141,7 +141,7 @@ argument   | meaning
 In addition, there are the following options affecting behaviour:
 
 option | argument | per-reader | meaning
--------|----------|------------
+-------|----------|------------|---------------
 `-n`   | _N_      | yes        | limit read/take to _N_ samples
 `-s`   | _T_      | yes        | sleep _T_ ms after each read/take (default: 0)
 `-$`   |          | yes        | perform one final, unlimited take-all just before stopping in `p` and `d` modes
@@ -193,7 +193,7 @@ Each reader runs in a separate thread with its own waitsets and mode settings (e
 Analogous to the reader mode selection option, there is the `-w` writer mode selection option (`-w` is probably more mnemonic of "writer" than `-m` is of "reader", but hey, it grew over time). The `-w` option argument is interpreted as follows:
 
 argument     | auto | meaning
--------------|----------------
+-------------|------|----------
 `0`          | n/a  | no writer for the current topic specification
 _N_          | yes  | cycle through _N_ key values as fast as possible, incrementing the sequence number for each sample (see also `-m` option)
 _N_:_R_      | yes  | as _N_ but at a rate of _R_ samples/second (rate in floating-point)
