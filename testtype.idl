@@ -1,0 +1,45 @@
+struct OneULong
+{
+  unsigned long seq;
+};
+#pragma keylist OneULong
+
+struct Keyed32
+{
+  unsigned long seq;
+  long keyval;
+  octet baggage[24];
+};
+#pragma keylist Keyed32 keyval
+
+struct Keyed64
+{
+  unsigned long seq;
+  long keyval;
+  octet baggage[56];
+};
+#pragma keylist Keyed64 keyval
+
+struct Keyed128
+{
+  unsigned long seq;
+  long keyval;
+  octet baggage[120];
+};
+#pragma keylist Keyed128 keyval
+
+struct Keyed256
+{
+  unsigned long seq;
+  long keyval;
+  octet baggage[248];
+};
+#pragma keylist Keyed256 keyval
+
+struct KeyedSeq
+{
+  unsigned long seq;
+  long keyval;
+  sequence<octet> baggage;
+};
+#pragma keylist KeyedSeq keyval

@@ -1,0 +1,622 @@
+: # -*- perl -*-
+eval 'exec perl -w -S $0 "$@"'
+if 0;
+
+# please keep in sync with keyrefpp
+
+require 5.10.0;
+
+use strict;
+use Carp;
+use Getopt::Std;
+
+my %opts;
+getopts ("hr", \%opts);
+
+if (exists ${opts{h}} || @ARGV == 0) {
+  print STDERR <<EOT;
+usage: $0 [-r] TYPE INPUT.idl...
+
+-r         raw mode, do not preprocess input
+
+TYPE       topic-type we want to use
+
+INPUT.idl  input files: these are preprocessed with 'cpp', concatenated
+           and then processed.  (It does not care when types are defined
+           multiple times, so concatenating them should work.)  Specify
+           a - to read stdin.
+
+Note: It cannot parse all valid IDL inputs (in particular, it ignores
+things such as unions and constants, and cannot parse some complex
+features, &c.); error messages are of low quality.
+EOT
+  exit 1;
+}
+
+my $raw_mode = exists $opts{r};
+my $type = shift @ARGV;
+
+# format specifiers for sprintf when serializing integer key fields
+my %integer_fmt_tab =
+  (int8  => "hhd", uint8 => "hhu",
+   int16 => "hd",  uint16 => "hu",
+   int32 => "d",   uint32 => "u",
+   int64 => "lld", uint64 => "llu");
+
+# maximum fixed length needed in serialized form for each type
+my %fixed_size_tab =
+  (int8   =>  4, # -128
+   uint8  =>  3, #  255
+   int16  =>  6, # -32 768
+   uint16 =>  5, #  65 535
+   int32  => 11, # -2 147 483 648
+   uint32 => 10, #  4 294 967 295
+   int64  => 20, # -4 611 686 018 427 387 904
+   uint64 => 19, #  9 223 372 036 854 775 807
+   string =>  0); # no fixed contribution
+
+# Read in all of the input in one big string
+undef $/;
+my $input = "";
+for (@ARGV) {
+  if ($raw_mode) {
+    open FH, "< $_" or die "error: can't open $_";
+  } else {
+    open FH, "cpp -xc++ -DOSPL_IDL_COMPILER -I$ENV{OSPL_HOME}/etc/idl $_ |" or die "error: 'cpp $_' failed";
+  }
+  $input .= <FH>;
+  close FH;
+}
+
+# @module_stack is an array used as a stack for module nesting,
+# everything found in the input is fictitiously contained in a module
+# "u", to distinguish all user-defined types from the primitive type
+# names used inside this script.
+my @module_stack = ("u");
+
+# %types is a hash table mapping fully-qualified type names to their
+# definitions; a type definition is either a primitive (the names in
+# %fixed_size_tab), the name of a user-defined type (in %types) or a
+# reference to an array of types for representing structs. The primitive
+# types are explicitly added to %types to simplify further processing.
+#
+# All enums get mapped to int32 -- just like in C.  Unions,
+# floating-point numbers, &c. are simply ignored as they cannot be used
+# as keys.  Actually, it can't parse unions yet.
+my %types = ();
+for (keys %fixed_size_tab) { $types{$_} = $_; }
+
+# The topics are collected in the @topics array.  Each topic in is
+# represented as [ TYPE, KEYS ] (an array reference), where TYPE is the
+# type name, and KEYS itself is a reference to an array of hash tables
+# with the following entries:
+#
+#   name   the name of the field
+#   type   the type -- this must be one of the primitive types in
+#          %fixed_size_tab
+#
+# The name uses the C notation for field references, i.e., separates
+# names in nested structs with '.'.  The code generator simply copies
+# this to the output.
+my @topics = ();
+
+# Tokenizer status:
+#
+# @pushback_token_list contains already parsed tokens that have been
+# pushed back for re-evaluation, allowing token lookahead and injecting
+# extra tokens in the input stream.  The latter is sometimes used to
+# simplify the parsing of separators by inserting an initial separator.
+#
+# $input_at_bol is true iff the tokenizer is currently at the start of a
+# line.  This enables, e.g., the recognition of "#pragma keylist".
+#
+# $lineno is the current line number, @fstack tracks {name, line}
+# pairs and is updated by "# LINE" directives
+my @pushback_token_list = ();
+my $input_at_bol = 1;
+my $lineno = 1;
+my $last_token = "";
+my @fstack = ({ name => "<input>", lineno => 1 });
+
+# With everything initialized, parse the input.  Parse errors will cause
+# the script to terminate.
+parse ();
+
+die "topic $type undefined\n" unless exists $types{"u::$type"};
+my @t = grep { $_->[1] eq "u::$type" } @topics;
+die "no keylist for type $type\n" if @t == 0;
+my @keys = map { $_->{name} } @{$t[0]->[2]};
+print "@keys\n";
+
+exit 0;
+
+              ############################################
+              ###### TYPE & FIELDNAME => FIELD TYPE ######
+              ############################################
+
+sub lookup_field_type {
+  my ($fqtype, $field, $type) = @_;
+  #print "lookup_field_type $fqtype $field\n";
+  my @fs = split (/\./, $field);
+  while (@fs > 0) {
+    my $f = shift @fs;
+    #print "looking for $f\n";
+    parse_error ("$fqtype not a struct containing $field (1)") unless ref ($type) eq "ARRAY";
+    my $subtype = undef;
+    for (@{$type}) {
+      # each member is [ NAME, TYPE ], scan until match
+      next unless $_->[0] eq $f;
+      $subtype = $types{$_->[1]};
+    }
+    die "$fqtype not a struct containing $field (2)" unless defined $subtype;
+    $type = $subtype;
+  }
+  # might be a typedef of a primitive type
+  $type = $types{$type} while $type =~ /^u::/ && exists $types{$type};
+  parse_error ("$fqtype.$field not a primitive type ($type)") unless $type !~ /^u::/;
+  #print "lookup_field_type $fqtype $field => $type\n";
+  return $type;
+}
+
+                         #####################
+                         ####### PARSER ######
+                         #####################
+
+sub parse {
+  while (peek_token () ne "EOF") {
+    parse_topdecl ();
+  }
+}
+
+sub parse_topdecl {
+  my $tok = peek_token ();
+  if ($tok eq "module") { parse_module (); }
+  elsif ($tok eq "typedef") { parse_typedef (); }
+  elsif ($tok eq "struct") { parse_struct (); }
+  elsif ($tok eq "union") { parse_union (); }
+  elsif ($tok eq "enum") { parse_enum (); }
+  elsif ($tok eq "const") { parse_const (); } 
+  elsif ($tok eq "KEYLIST") { parse_keylist (); pushback_token (";", undef); }
+  else { parse_error ("parse_topdecl"); }
+  next_token (";");
+}
+
+sub parse_module {
+  my ($tok, $val, $name);
+  next_token ("module");
+  ($tok, $name) = next_token ("IDENT");
+  #print STDERR "begin module $name\n";
+  push @module_stack, $name;
+  ($tok, $val) = next_token ("{");
+  while (($tok = peek_token ()) ne "}") {
+    parse_topdecl ();
+  }
+  next_token ("}");
+  pop @module_stack;
+  #print STDERR "end module\n";
+}
+
+sub fqname {
+  my ($name) = @_;
+  if ($name =~ /^::/) {
+    return "u$name";
+  } else {
+    return (join ("::", @module_stack))."::$name";
+  }
+}
+
+sub parse_typedef {
+  my ($tok, $type, $name);
+  next_token ("typedef");
+  $type = parse_type ();
+  # insert a "," in the token stream so the loop gets simpler
+  pushback_token (",", undef);
+  while (peek_token () eq ",") {
+    next_token ();
+    my ($tok, $name) = next_token ("IDENT");
+    if (parse_array_dim ()) { # ignoring arrays
+      $types{fqname ($name)} = "ignore";
+    } else {
+      $types{fqname ($name)} = $type;
+    }
+    #print STDERR "@{[fqname($name)]} = $types{fqname ($name)}\n";
+  }
+}
+
+sub parse_struct {
+  my ($tok, $val, $name);
+  next_token ("struct");
+  ($tok, $name) = next_token ("IDENT");
+  # assign it a temporary type, so members can refer to it
+  $types{fqname ($name)} = "<incomplete>";
+  ($tok, $val) = next_token ("{");
+  my @members = ();
+  while (peek_token () ne "}") {
+    push @members, parse_member ();
+    next_token (";");
+  }
+  next_token ("}");
+  $types{fqname($name)} = \@members;
+  return fqname ($name);
+}
+
+sub parse_enum { # all enums get mapped to int32, identifiers are dropped
+  my ($tok, $val, $name);
+  next_token ("enum");
+  ($tok, $name) = next_token ("IDENT");
+  $types{fqname ($name)} = "int32";
+  ($tok, $val) = next_token ("{");
+  my @members = ();
+  pushback_token (",", undef);
+  while (peek_token () ne "}") {
+    next_token (",");
+    next_token ("IDENT");
+    # not even bothering to parse constant expressions: simply
+    # dropping all tokens until next ',' or '}'
+    if (peek_token () eq "=") {
+      next_token ();
+      while (peek_token () !~ /[,}]/) { next_token (); }
+    }
+  }
+  next_token ("}");
+  return fqname ($name);
+}
+
+sub parse_const { # we can parse (most?) constants, but we drop them
+  my ($tok, $val);
+  next_token ("const");
+  my $type = parse_type ();
+  ($tok, $val) = next_token ("IDENT");
+  #print STDERR "parse_const: type = $type name = $val\n";
+  next_token ("=");
+  while (peek_token () ne ";") { # gobble up everything until ';"
+    ($tok, $val) = next_token ();
+    #print STDERR "  $tok";
+    #print STDERR "=$val" if defined $val;
+  }
+  #print STDERR "\n";
+}
+
+sub parse_union { # we can parse them (probably including some illegal ones)
+  my ($tok, $val, $name);
+  next_token ("union");
+  ($tok, $name) = next_token ("IDENT");
+  #print STDERR "parse_union: name = $name\n";
+  $types{fqname ($name)} = "union";
+  next_token ("switch");
+  next_token ("(");
+  my $disctype = parse_type ();
+  #print STDERR "  disc.type = $disctype\n";
+  next_token (")");
+  next_token ("{");
+  while (($tok = peek_token ()) ne "}") {
+    if ($tok eq "case") {
+      next_token ("case");
+      parse_int_or_constname ();
+      next_token (":");
+    } elsif ($tok eq "default") {
+      next_token ("default");
+      next_token (":");
+    } else {
+      parse_member ();
+      next_token (";");
+    }
+  }
+  next_token ("}");
+  return fqname ($name);
+}
+
+sub parse_member {
+  my ($tok, $name, $type);
+  my $ignore = 0;
+  $type = parse_type ();
+  return parse_memberlist_nonempty ($type);
+}
+
+sub parse_memberlist_nonempty {
+  my ($type) = @_;
+  my @members = ();
+  # insert a "," in the token stream so the loop gets simpler
+  pushback_token (",", undef);
+  while (peek_token () eq ",") {
+    next_token ();
+    my ($tok, $name) = next_token ("IDENT");
+    if (parse_array_dim ()) { # ignoring arrays
+      push @members, [ $name, "ignore" ];
+    } else {
+      push @members, [ $name, $type ];
+    }
+  }
+  return @members;
+}
+
+sub parse_type {
+  my ($tok) = peek_token ();
+  if ($tok =~ /^(boolean|float|double)$/) { next_token (); return $tok; }
+  elsif ($tok =~ /^(octet|char|short|long|unsigned)$/) { return parse_type_int (); }
+  elsif ($tok eq "string") { return parse_type_string (); }
+  elsif ($tok eq "sequence") { return parse_type_sequence (); }
+  elsif ($tok =~ /^(::|IDENT)$/) { return parse_type_user (); }
+  elsif ($tok eq "struct") { return parse_struct (); }
+  elsif ($tok eq "enum") { return parse_enum (); }
+  elsif ($tok eq "union") { return parse_union (); }
+  else { parse_error ("parse_type: unexpected token: $tok"); }
+}
+
+sub parse_type_int {
+  my ($tok, $val) = next_token ();
+  my ($prefix, $size) = ("", 0);
+  if ($tok eq "octet") { $prefix = "u"; $size = 8; }
+  elsif ($tok eq "char") { $size = 8; }
+  else {
+    if ($tok eq "unsigned") { $prefix = "u"; ($tok, $val) = next_token (); }
+    if ($tok eq "short") { $size = 16; }
+    elsif ($tok eq "long") { if (peek_token () eq "long") { next_token (); $size = 64; } else { $size = 32; } }
+    else { parse_error ("parse_type_prim"); }
+  }
+  return "${prefix}int${size}";
+}
+
+sub parse_type_string {
+  my ($tok, $val) = next_token ("string");
+  if (peek_token () eq "<") { # bounded string; ignore bound
+    next_token ("<");
+    parse_int_or_constname ();
+    next_token (">");
+  }
+  return "string";
+}
+
+sub parse_type_sequence {
+  my ($tok, $val) = next_token ("sequence");
+  next_token ("<");
+  parse_type ();
+  if (peek_token () eq ",") { # bounded sequence; ignore bound
+    next_token (",");
+    parse_int_or_constname ();
+  }
+  next_token (">");
+  return "sequence";
+}
+
+sub parse_array_dim {
+  my $isary = 0;
+  while (peek_token () eq "[") {
+    $isary = 1;
+    next_token ("[");
+    parse_int_or_constname ();
+    next_token ("]");
+  }
+  return $isary;
+}
+
+sub parse_int_or_constname {
+  my ($tok, $val) = next_token ();
+  if ($tok eq "INT") { return ($tok, $val); }
+  elsif ($tok eq "IDENT") {
+    my $name = $val;
+    while (peek_token () eq "::") {
+      next_token ();
+      ($tok, $val) = next_token ("IDENT");
+      $name = "${name}::$val";
+    }
+    return ("SYMBOL", $name);
+  }
+}
+
+sub parse_type_user {
+  my ($tok, $val, @cs);
+  # collect components of name in @cs
+  ($tok, $val) = next_token ();
+  my $is_fq = ($tok eq "::");
+  my $fqname;
+  push @cs, $val unless $tok eq "::";
+  # if last token was "::" we must have an identifier; if it was an
+  # identifier, we peek at the next one and continue if "::".
+  while (1) {
+    if ($tok eq "::") {
+      ($tok, $val) = next_token ("IDENT");
+      push @cs, $val;
+    } elsif (peek_token () eq "::") {
+      ($tok, $val) = next_token ("::");
+    } else {
+      last;
+    }
+  }
+  if ($is_fq) {
+    # fully qualified name -- but we must still prepend "u"
+    $fqname = join "::", ("u", @cs);
+    parse_error ("parse_type_user: type $fqname not known") unless exists ${types{$fqname}};
+  } else {
+    # go up the module hierarchy looking for the name
+    my @prefix = @module_stack;
+    $fqname = join "::", (@prefix, @cs);
+    while (!exists $types{$fqname} && @prefix > 1) {
+      pop @prefix;
+      $fqname = join "::", (@prefix, @cs);
+    }
+    if (!exists $types{$fqname}) {
+      my $name = join "::", @cs;
+      my $scope = join "::", @module_stack;
+      parse_error ("parse_type_user: type $name not known in scope $scope");
+    }
+  }
+  #printf STDERR "%s%s => %s\n", ($is_fq ? "::" : ""), (join "::", @cs), $fqname;
+  return $fqname;
+}
+
+sub parse_keylist {
+  my ($tok, $val) = next_token ("KEYLIST");
+  #print "parse_keylist\n";
+  my @vs = split (/(?:\s|,)+/, $val);
+  # type name is first, make it fully qualified including u:: prefix
+  my $name = shift @vs;
+  my $fqname = fqname ($name);
+  #print "name = $name, fqname = $fqname\n";
+  #for (@vs) {
+  #  print "  X $_\n";
+  #}
+  parse_error ("#pragma keylist $name: unknown type $fqname") unless exists $types{$fqname};
+  parse_error ("#pragma keylist $name: type $fqname is not a struct") unless ref ($types{$fqname}) eq "ARRAY";
+  my @ks = ();
+  for my $n (@vs) {
+    my $type = lookup_field_type ($fqname, $n, $types{$fqname});
+    push @ks, { name => $n, type => $type };
+  }
+  my $mangled_name = $fqname;
+  $mangled_name =~ s/^u:://;
+  $mangled_name =~ s/::/_/;
+  push @topics, [ $mangled_name, $fqname, \@ks ];
+}
+
+                        #######################
+                        ###### TOKENIZER ######
+                        #######################
+
+sub peek_token {
+  my ($tok, $val) = peek_token_val ();
+  return $tok;
+}
+
+sub peek_token_val {
+  my ($tok, $val) = next_token ();
+  pushback_token ($tok, $val);
+  return ($tok, $val);
+}
+
+sub pushback_token {
+  my ($tok, $val) = @_;
+  unshift @pushback_token_list, [ $tok, $val ];
+}
+
+sub next_token {
+  my ($exp) = @_;
+  my ($tok, $val);
+  if (@pushback_token_list) {
+    my $tvref = shift @pushback_token_list;
+    ($tok, $val) = @$tvref;
+  } else {
+    ($tok, $val) = next_token_1 ();
+  }
+  if (defined $exp) {
+    parse_error ("$exp expected, have $tok") unless $tok eq $exp;
+  }
+  return ($tok, $val);
+}
+
+sub unescape {
+  my ($str) = @_;
+  $str =~ s/\\x([0-9a-fA-F]{1,2})/chr (eval "0x$1")/ge;
+  $str =~ s/\\([0-7]{1,3})/chr (eval "0$1")/ge;
+  $str =~ s/\\([0-7]{1,3})/chr (eval "0$1")/ge;
+  $str =~ s/(\\[nrt])/$1/gee;
+  $str =~ s/\\([\\"])/$1/g;
+  return $str;
+}
+
+sub process_line_directive {
+  my ($arg) = @_;
+  $arg =~ s/^(\d+)\h+//;
+  $lineno = $1;
+  $arg =~ s/^"((?:[^\\"]|\\\\|\\")*)"\h*//;
+  my $name = $1;
+  $name = unescape ($name);
+  if ($arg eq "" && $name ne $fstack[$#fstack]->{name}) {
+    # force push if no flags & file names differ
+    $arg = "1"
+  }
+  while ($arg ne "") {
+    $arg =~ s/(\d+)\h*//;
+    if ($1 == 1) { # push new file
+      #print STDERR "== push $name $lineno\n";
+      my $i;
+      for ($i = 0; $i < @fstack; $i++) {
+        #print STDERR "== scan $fstack[$i]->{name} $fstack[$i]->{lineno}\n";
+        last if $fstack[$i]->{name} eq $name && $fstack[$i]->{lineno} eq $lineno;
+      }
+      #print STDERR "== pop to $i\n";
+      pop @fstack while @fstack > $i;
+      push @fstack, { name => $name, lineno => $lineno };
+    } elsif ($1 == 2) { # pop until name
+      while (@fstack > 1 && $fstack[$#fstack]->{name} ne $name) {
+        #print STDERR "== pop $fstack[$#fstack]->{name} $fstack[$#fstack]->{lineno}\n";
+        pop @fstack;
+      }
+      $lineno = $fstack[$#fstack]->{lineno};
+    } elsif ($1 == 3) {
+    } elsif ($1 == 4) {
+    } else {
+      parse_error ("process_line_directive");
+    }
+  }
+}
+
+sub char_const_1 {
+  if ($input =~ /^''/) { parse_error ("char_const_1: empty character constant"); }
+  elsif ($input =~ /^'([^\\])'/) { advance (); return $1; }
+  elsif ($input =~ /^'\\([\\'])'/) { advance (); return $1; }
+  elsif ($input =~ /^'(\\[nrt])'/) { advance (); return (eval "\"$1\""); }
+  elsif ($input =~ /^'\\([0-7]{1,3})'/) { advance (); return chr (eval "0$1"); }
+  elsif ($input =~ /^'\\x([0-9a-fA-F]{1,2})'/) { advance (); return chr (eval "0x$1"); }
+  else { parse_error ("char_const_1: unrecognized constant"); }
+}
+
+sub next_token_1 {
+  while (1) {
+    if ($input_at_bol) {
+      if ($input =~ /^\h*#\h+([0-9]+.*)/) { advance (); process_line_directive ($1); next; }
+      elsif ($input =~ /^\h*#\h*pragma\h+keylist\h+(.*)/) { advance (); return ("KEYLIST", $1) }
+    }
+
+    if ($input =~ /^$/) { return ("EOF", undef); }
+    elsif ($input =~ /^\R/) { advance (); $input_at_bol = 1; $lineno++; next; }
+    elsif ($input =~ /^(\h+|\/\/.*)/) { advance (); next; }
+    elsif ($input =~ /^(::|[=:;,<>(){}\[\]+~*\/%|&^]|-)/) { advance (); return ($1, undef); }
+    elsif ($input =~ /^(module|const|enum|struct|sequence|char|octet|short|long|string|float|double|boolean|typedef|unsigned|union|case|default|switch)(?![A-Za-z_0-9])/) { advance (); return ($1, undef); }
+    elsif ($input =~ /^([A-Za-z_][A-Za-z_0-9]*)/) { advance (); return ("IDENT", $1); }
+    elsif ($input =~ /^([0-9]*\.[0-9]+([Ee][+-]?[0-9]+)?|[0-9]+(\.|[Ee][+-]?[0-9]+))/) { advance (); return ("FLOAT", $1); }
+    elsif ($input =~ /^([1-9][0-9]*)/) { advance (); return ("INT", $1); }
+    elsif ($input =~ /^(0x[0-9a-fA-F]+)/) { advance (); return ("INT", eval $1); }
+    elsif ($input =~ /^(0[0-9]*)/) { advance (); return ("INT", eval $1); }
+    # very low quality character and string constant handling
+    elsif ($input =~ /^'/) { return ("CHAR", char_const_1 ()); }
+    elsif ($input =~ /^"(([^"\\]|\\\\|\\")*)"/) { advance (); return ("STRING", unescape ($1)); }
+    else { parse_error ("next_token_1: unrecognized token"); }
+  }
+}
+
+sub advance {
+  my $advance_over = substr ($input, 0, $+[0]);
+
+  $last_token .= $advance_over;
+  if (length $last_token > 30) {
+    $last_token = substr ($last_token, -30);
+  }
+
+  $input = substr ($input, $+[0]);
+  $input_at_bol = 0;
+
+  #$advance_over =~ s/\n/\\n/g;
+  #$advance_over =~ s/\r/\\r/g;
+  #print STDERR "advance: $advance_over\n";
+}
+
+sub parse_error {
+  my ($msg) = @_;
+
+  print STDERR "error in $fstack[$#fstack]->{name}:$lineno\n";
+  for (my $i = $#fstack - 1; $i >= 1; $i--) {
+    print STDERR "  included from $fstack[$i]->{name}:$fstack[$i]->{lineno}\n";
+  }
+  $input =~ /^(.{0,30})/s;
+  my $snippet = $1;
+  $snippet =~ s/\n/\\n/g;
+  $snippet =~ s/\r/\\r/g;
+  $last_token =~ s/\n/\\n/g;
+  $last_token =~ s/\r/\\r/g;
+  print STDERR "  near [*] in: $last_token [*] $snippet\n";
+  print STDERR "  note: shifted input for lookahead\n" if @pushback_token_list;
+  #my $atbol = $input_at_bol ? "" : " not";
+  #print STDERR "while$atbol at bol\n";
+  croak "  $msg\n";
+}

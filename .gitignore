@@ -1,0 +1,10 @@
+*.o
+lsbuiltin
+pubsub
+genreader
+*.d
+*.log
+testtype.h
+testtypeDcps*
+testtypeSac*
+testtypeSpl*
