@@ -56,62 +56,156 @@ static DDS_Topic find_topic(DDS_DomainParticipant dp, const char *name, const DD
   return tp;
 }
 
+static int patmatch(const char *pat, const char *str)
+{
+  switch(*pat)
+  {
+    case 0:   return *str == 0;
+    case '?': return *str == 0 ? 0 : patmatch(pat+1, str+1);
+    case '*': return patmatch(pat+1, str) || (*str != 0 && patmatch(pat, str+1));
+    default:  return *str != *pat ? 0 : patmatch(pat+1, str+1);
+  }
+}
+
+static DDS_StatusCondition attach_reader_status_data_available(DDS_WaitSet ws, DDS_DataReader rd)
+{
+  DDS_StatusCondition sc;
+  DDS_ReturnCode_t rc;
+  if ((sc = DDS_DataReader_get_statuscondition(rd)) == NULL)
+    error("DDS_DataReader_get_statuscondition failed\n");
+  if ((rc = DDS_StatusCondition_set_enabled_statuses(sc, DDS_DATA_AVAILABLE_STATUS)) != DDS_RETCODE_OK)
+    error("DDS_StatusCondition_set_enabled_statuses failed (%s)\n", dds_strerror(rc));
+  if ((rc = DDS_WaitSet_attach_condition(ws, sc)) != DDS_RETCODE_OK)
+    error("DDS_WaitSet_attach_condition failed (%s)\n", dds_strerror(rc));
+  return sc;
+}
+
+struct rdlist {
+  DDS_DataReader rd;
+  DDS_StatusCondition sc;
+  struct tgtopic *tgtp;
+  struct rdlist *next;
+};
+
 int main (int argc, char **argv)
 {
-  DDS_Topic tp;
   DDS_Duration_t timeout = { 10, 0 };
-  DDS_Subscriber sub;
-  DDS_DataReader rd;
+  DDS_Subscriber bsub, sub;
+  DDS_DataReader trd;
+  DDS_StatusCondition tsc;
   struct qos *qos;
-  struct tgtopic *tgtp;
-  const char *partitions[] = { "", "__BUILT-IN PARTITION__" };
   DDS_ReturnCode_t result;
   struct DDS_sequence_s mseq;
+  DDS_sequence_DDS_TopicBuiltinTopicData tseq;
   DDS_SampleInfoSeq iseq;
+  DDS_WaitSet ws;
+  DDS_ConditionSeq *gl;
   unsigned i;
+  struct rdlist *rds = NULL;
+  const char *topicpat;
 
-  if (argc != 2)
+  if (argc < 2)
   {
-    fprintf(stderr, "usage %s TOPIC\n", argv[0]);
+    fprintf(stderr, "usage %s TOPIC_PATTERN [PARTITION...]\n", argv[0]);
     return 1;
   }
   common_init(argv[0]);
-
-  if ((tp = find_topic(dp, argv[1], &timeout)) == NULL)
-    error("topic %s not found\n", argv[1]);
-  tgtp = tgnew(tp, 0);
+  topicpat = argv[1];
 
   qos = new_subqos();
-  sub = new_subscriber(qos, 2, partitions);
+  sub = new_subscriber(qos, argc - 2, (const char **) (argv + 2));
   free_qos(qos);
 
-  qos = new_rdqos(sub, tp); /* uses topic qos */
-  rd = new_datareader(qos);
-  free_qos(qos);
+  if ((ws = DDS_WaitSet__alloc ()) == NULL)
+    error ("DDS_WaitSet__alloc failed\n");
+  if ((gl = DDS_ConditionSeq__alloc ()) == NULL)
+    error ("DDS_ConditionSeq__alloc failed\n");
 
+  if ((bsub = DDS_DomainParticipant_get_builtin_subscriber(dp)) == NULL)
+    error ("DDS_DomainParticipant_get_builtin_subscriber failed\n");
+  if ((trd = DDS_Subscriber_lookup_datareader(bsub, "DCPSTopic")) == NULL)
+    error ("DDS_Subscriber_lookup_datareader(DCPSTopic) failed\n");
+  tsc = attach_reader_status_data_available (ws, trd);
+
+  memset(&tseq, 0, sizeof(tseq));
   memset(&mseq, 0, sizeof(mseq));
   memset(&iseq, 0, sizeof(iseq));
   while(1)
   {
-    result = DDS_DataReader_take (rd, &mseq, &iseq, DDS_LENGTH_UNLIMITED, DDS_ANY_SAMPLE_STATE, DDS_ANY_VIEW_STATE, DDS_ANY_INSTANCE_STATE);
-    if (result != DDS_RETCODE_OK && result != DDS_RETCODE_NO_DATA)
-      error("take failed, error %s\n", dds_strerror(result));
+    DDS_Duration_t infinity = DDS_DURATION_INFINITE;
+    unsigned k;
+    if ((result = DDS_WaitSet_wait (ws, gl, &infinity)) != DDS_RETCODE_OK)
+      error ("DDS_WaitSet_wait failed: %s\n", dds_strerror (result));
 
-    for (i = 0; i < mseq._length; i++)
+    for (k = 0; k < gl->_length; k++)
     {
-      DDS_SampleInfo const * const si = &iseq._buffer[i];
-      if (si->valid_data)
+      if (gl->_buffer[k] == tsc)
       {
-        tgprint(stdout, tgtp, (char *)mseq._buffer + i * tgtp->size, TGPM_FIELDS);
-        printf("\n");
+        result = DDS_TopicBuiltinTopicDataDataReader_take (trd, &tseq, &iseq, DDS_LENGTH_UNLIMITED, DDS_ANY_SAMPLE_STATE, DDS_ANY_VIEW_STATE, DDS_ANY_INSTANCE_STATE);
+        if (result != DDS_RETCODE_OK)
+          error("take failed, error %s\n", dds_strerror(result));
+
+        for (i = 0; i < tseq._length; i++)
+        {
+          DDS_SampleInfo const * const si = &iseq._buffer[i];
+          if (si->valid_data)
+          {
+            DDS_TopicBuiltinTopicData const * const d = &tseq._buffer[i];
+            struct rdlist *rd;
+            DDS_Topic tp;
+
+            if (!patmatch (topicpat, d->name))
+              continue; /* nonmatching topic */
+            for (rd = rds; rd; rd = rd->next)
+              if (strcmp(d->name, rd->tgtp->name) == 0)
+                break;
+            if (rd != NULL)
+              continue; /* already have a reader */
+
+            printf ("[new topic: %s]\n", d->name);
+
+            rd = malloc (sizeof (*rd));
+            if ((tp = find_topic(dp, d->name, &timeout)) == NULL)
+              error("topic %s not found\n", d->name);
+            rd->tgtp = tgnew(tp, 0);
+            qos = new_rdqos(sub, tp); /* uses topic qos */
+            rd->rd = new_datareader(qos);
+            free_qos(qos);
+            rd->sc = attach_reader_status_data_available (ws, rd->rd);
+
+            rd->next = rds;
+            rds = rd;
+          }
+        }
+
+        DDS_TopicBuiltinTopicDataDataReader_return_loan(trd, &tseq, &iseq);
+      }
+      else
+      {
+        struct rdlist *rd;
+        for (rd = rds; rd; rd = rd->next)
+          if (gl->_buffer[k] == rd->sc)
+            break;
+        if (rd == NULL)
+          error ("DDS_WaitSet_wait returned an unknown condition\n");
+
+        result = DDS_DataReader_take (rd->rd, &mseq, &iseq, DDS_LENGTH_UNLIMITED, DDS_ANY_SAMPLE_STATE, DDS_ANY_VIEW_STATE, DDS_ANY_INSTANCE_STATE);
+        if (result != DDS_RETCODE_OK)
+          error("take failed, error %s\n", dds_strerror(result));
+
+        for (i = 0; i < mseq._length; i++)
+        {
+          DDS_SampleInfo const * const si = &iseq._buffer[i];
+          if (si->valid_data)
+          {
+            printf("%s: ", rd->tgtp->name);
+            tgprint(stdout, rd->tgtp, (char *)mseq._buffer + i * rd->tgtp->size, TGPM_FIELDS);
+            printf("\n");
+          }
+        }
+
+        DDS_DataReader_return_loan(rd->rd, &mseq, &iseq);
       }
     }
-
-    DDS_DataReader_return_loan(rd, &mseq, &iseq);
-    usleep(10000);
   }
-
-  tgfree(tgtp);
-  common_fini();
-  return 0;
 }
