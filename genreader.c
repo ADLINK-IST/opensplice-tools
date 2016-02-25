@@ -7,34 +7,55 @@
 
 static DDS_Topic find_topic(DDS_DomainParticipant dp, const char *name, const DDS_Duration_t *timeout)
 {
-  DDS_ReturnCode_t result;
   DDS_Topic tp;
-  int isbuiltin = 0;
 
-  /* A historical accident has caused subtle issues with a generic reader for the built-in topics included in the DDS spec. */
+  /* A historical accident has caused subtle issues with a generic reader for the built-in topics included in the DDS spec (as well as a problem for DCPSDelivery). */
   if (strcmp(name, "DCPSParticipant") == 0 || strcmp(name, "DCPSTopic") == 0 ||
-      strcmp(name, "DCPSSubscription") == 0 || strcmp(name, "DCPSPublication") == 0) {
+      strcmp(name, "DCPSSubscription") == 0 || strcmp(name, "DCPSPublication") == 0)
+  {
     DDS_Subscriber sub;
     if ((sub = DDS_DomainParticipant_get_builtin_subscriber(dp)) == NULL)
       error("DDS_DomainParticipant_get_builtin_subscriber failed\n");
-    if (DDS_Subscriber_lookup_datareader(sub, name) == NULL)
+    if ((DDS_Subscriber_lookup_datareader(sub, name)) == NULL)
       error("DDS_Subscriber_lookup_datareader failed\n");
-    if ((result = DDS_Subscriber_delete_contained_entities(sub)) != DDS_RETCODE_OK)
-      error("DDS_Subscriber_delete_contained_entities failed: error %d (%s)\n", (int) result, dds_strerror(result));
-    if ((result = DDS_DomainParticipant_delete_subscriber(dp, sub)) != DDS_RETCODE_OK)
-      error("DDS_DomainParticipant_delete_subscriber failed: error %d (%s)\n", (int) result, dds_strerror(result));
-    isbuiltin = 1;
+    if ((tp = DDS_DomainParticipant_find_topic(dp, name, timeout)) == NULL)
+      error("topic %s not found\n", name);
   }
-
-  if ((tp = DDS_DomainParticipant_find_topic(dp, name, timeout)) == NULL)
-    error("topic %s not found\n", name);
-
-  if (!isbuiltin) {
-    char *tn = DDS_Topic_get_type_name(tp);
-    char *kl = DDS_Topic_get_keylist(tp);
-    char *md = DDS_Topic_get_metadescription(tp);
+  else if (strcmp(name, "DCPSDelivery") == 0)
+  {
+    /* workaround for a bug */
+    static const char *tn = "kernelModule::v_deliveryInfo";
+    static const char *kl = "";
+    static const char *md = "<MetaData version=\"1.0.0\"><Module name=\"kernelModule\"><Struct name=\"v_gid_s\"><Member name=\"systemId\"><ULong/></Member><Member name=\"localId\"><ULong/></Member><Member name=\"serial\"><ULong/></Member></Struct><TypeDef name=\"v_gid\"><Type name=\"v_gid_s\"/></TypeDef><Struct name=\"v_deliveryInfo\"><Member name=\"writerGID\"><Type name=\"v_gid\"/></Member><Member name=\"readerGID\"><Type name=\"v_gid\"/></Member><Member name=\"sequenceNumber\"><ULong/></Member></Struct></Module></MetaData>";
     DDS_ReturnCode_t result;
     DDS_TypeSupport ts;
+    DDS_TopicQos *tqos;
+    if ((ts = DDS_TypeSupport__alloc(tn, kl, md)) == NULL)
+      error("DDS_TypeSupport__alloc(%s) failed\n", tn);
+    if ((result = DDS_TypeSupport_register_type(ts, dp, tn)) != DDS_RETCODE_OK)
+      error("DDS_TypeSupport_register_type(%s) failed: %d (%s)\n", tn, (int) result, dds_strerror(result));
+    DDS_free(ts);
+    if ((tqos = DDS_TopicQos__alloc()) == NULL)
+      error("DDS_TopicQos failed: %d (%s)\n", (int) result, dds_strerror(result));
+    if ((result = DDS_DomainParticipant_get_default_topic_qos(dp, tqos)) != DDS_RETCODE_OK)
+      error("DDS_DomainParticipant_get_default_topic_qos failed: %d (%s)\n", (int) result, dds_strerror(result));
+    tqos->reliability.max_blocking_time.sec = 0;
+    tqos->reliability.max_blocking_time.nanosec = 0;
+    if ((tp = DDS_DomainParticipant_create_topic(dp, name, tn, tqos, NULL, DDS_STATUS_MASK_NONE)) == NULL)
+      error("DDS_DomainParticipant_create_topic(%s) failed\n", name);
+    DDS_free(tqos);
+  }
+  else
+  {
+    char *tn, *kl, *md;
+    DDS_ReturnCode_t result;
+    DDS_TypeSupport ts;
+
+    if ((tp = DDS_DomainParticipant_find_topic(dp, name, timeout)) == NULL)
+      error("topic %s not found\n", name);
+    tn = DDS_Topic_get_type_name(tp);
+    kl = DDS_Topic_get_keylist(tp);
+    md = DDS_Topic_get_metadescription(tp);
     if ((ts = DDS_TypeSupport__alloc(tn, kl ? kl : "", md)) == NULL)
       error("DDS_TypeSupport__alloc(%s) failed\n", tn);
     if ((result = DDS_TypeSupport_register_type(ts, dp, tn)) != DDS_RETCODE_OK)
@@ -45,12 +66,10 @@ static DDS_Topic find_topic(DDS_DomainParticipant dp, const char *name, const DD
     DDS_free(ts);
 
     /* Work around a double-free-at-shutdown issue caused by a find_topic without a type support having been registered */
-    if ((result = DDS_DomainParticipant_delete_topic(dp, tp)) != DDS_RETCODE_OK) {
+    if ((result = DDS_DomainParticipant_delete_topic(dp, tp)) != DDS_RETCODE_OK)
       error("DDS_DomainParticipant_find_topic failed: %d (%s)\n", (int) result, dds_strerror(result));
-    }
-    if ((tp = DDS_DomainParticipant_find_topic(dp, name, timeout)) == NULL) {
+    if ((tp = DDS_DomainParticipant_find_topic(dp, name, timeout)) == NULL)
       error("DDS_DomainParticipant_find_topic(2) failed\n");
-    }
   }
 
   return tp;

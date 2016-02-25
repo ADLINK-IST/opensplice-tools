@@ -712,6 +712,10 @@ static char *get_metadescription(DDS_Topic dds_tp, char **typename, char **keyli
     md = DDS_string_dup(mdTopicBuiltinTopicData);
     *keylist = DDS_string_dup("key[1],key[0]");
     *typename = DDS_string_dup("DDS::TopicBuiltinTopicData");
+  } else if(strcmp(*typename, "kernelModule::v_deliveryInfo") == 0) {
+    /* workaround for a bug */
+    md = DDS_Topic_get_metadescription(dds_tp);
+    *keylist = DDS_string_dup("");
   } else {
     *keylist = DDS_Topic_get_keylist(dds_tp);
     md = DDS_Topic_get_metadescription(dds_tp);
