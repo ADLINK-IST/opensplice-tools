@@ -116,6 +116,11 @@ IDL_pubsub := testtype
 IDLMODS := $(sort $(foreach x, common $(TARGETS), $(IDL_$(subst -,_,$x))))
 ifneq "$(OSPL_MAJOR)" "" # assume source tree in which case $OSPL_HOME/etc/idl may not have the req files 
   PRE_V6_5 := $(shell [ `expr 100 \* $(OSPL_MAJOR) + $(OSPL_MINOR)` -lt 605 ] && echo yes)
+else
+  ifneq "$(wildcard $(OSPL_HOME)/release.com)" ""
+    MAJOR_MINOR := $(shell sed -n -e '/OpenSplice HDE Release/s/.*Release \(V\|\)\([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\2 \3/p' $(OSPL_HOME)/release.com)
+    PRE_V6_5 := $(shell [ `expr 100 \* $(word 1, $(MAJOR_MINOR)) + $(word 2, $(MAJOR_MINOR))` -lt 605 ] && echo yes)
+  endif
 endif
 ifeq "$(PRE_V6_5)" "yes"
   IDLPPFLAGS += -odds-types
@@ -129,7 +134,7 @@ IDLPP := $(shell which idlpp)
 ECHO_COMMAND=@
 
 .PHONY: all clean zz dd
-.PRECIOUS: %.h %.c
+.SECONDARY:
 
 .SECONDEXPANSION:
 %: %.o
