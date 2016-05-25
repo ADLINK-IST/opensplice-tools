@@ -69,7 +69,7 @@ ifneq "$(SPLICE_TARGET)" ""
   OSPL_INTERNAL_INC = api/dcps/gapi/include api/dcps/gapi/code user/include user/code abstraction/os-net/include abstraction/os-net/$(OS) abstraction/pa/include
   OSPLINC = $(addprefix src/, api/dcps/sac/bld/$(SPLICE_TARGET) api/dcps/sac/include database/database/include kernel/include osplcore/bld/$(SPLICE_TARGET) kernel/bld/$(SPLICE_TARGET) abstraction/os/include abstraction/os/$(OS) $(OSPL_INTERNAL_INC))
 else
-  OSPLINC = include/dcps/C/SAC
+  OSPLINC = include/dcps/C/SAC include/sys
 endif
 
 # Expect to be invoked either as:
