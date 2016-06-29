@@ -108,10 +108,11 @@ ifneq "$(filter darwin%, $(OS))" ""
 endif
 
 # Target executables, each may have a bunch of IDL files ...
-TARGETS = pubsub lsbuiltin
+TARGETS = pubsub$X lsbuiltin$X pingpong$X
 IDL_common := testtype
 # ... and those really required per target ...
 IDL_pubsub := testtype
+IDL_pingpong := testtype
 # ... and the set of all IDL files ($(sort) removes duplicates)
 IDLMODS := $(sort $(foreach x, common $(TARGETS), $(IDL_$(subst -,_,$x))))
 ifneq "$(OSPL_MAJOR)" "" # assume source tree in which case $OSPL_HOME/etc/idl may not have the req files 
@@ -129,7 +130,7 @@ else
   IDLPPFLAGS += -I$(OSPL_HOME)/etc/idl -DINCLUDE_DDS_DCPS
 endif
 
-IDLPP := $(shell which idlpp)
+IDLPP := $(shell which idlpp$X)
 
 ECHO_COMMAND=@
 
@@ -147,14 +148,15 @@ ECHO_COMMAND=@
 	$(ECHO_COMMAND)$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ -c $<
 
 
-%: %.o $$(foreach x, SacDcps.o SplDcps.o, \
+%$X: %.o $$(foreach x, SacDcps.o SplDcps.o, \
 		$$(sort $$(addsuffix $$x, $$(IDL_$$@) $$(if $$(filter common.o, $$^), $(IDL_common)))))
 	$(ECHO_COMMAND)$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 all: $(TARGETS)
 
-pubsub: tglib.o common.o porting.o
-genreader: tglib.o common.o
+pubsub$X: tglib.o common.o porting.o
+genreader$X: tglib.o common.o
+pingpong$X: common.o porting.o
 
 # A little bit of a simplification: assume preprocessing foo.c needs
 # the output of the IDL preprocessor files of the IDL files listed in
