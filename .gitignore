@@ -1,6 +1,9 @@
 *.o
 lsbuiltin
 pubsub
+pub
+sub
+pingpong
 genreader
 *.d
 *.log
