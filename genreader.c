@@ -132,7 +132,7 @@ int main (int argc, char **argv)
   topicpat = argv[1];
 
   qos = new_subqos();
-  sub = new_subscriber(qos, argc - 2, (const char **) (argv + 2));
+  sub = new_subscriber(qos, (unsigned)argc - 2, (const char **) (argv + 2));
   free_qos(qos);
 
   if ((ws = DDS_WaitSet__alloc ()) == NULL)

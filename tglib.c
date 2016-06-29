@@ -1187,7 +1187,7 @@ static int scanerror(struct token *tok, struct lexer *l, const char *fmt, ...)
 
     {
       int x, y, nsrc = (int) strlen(l->src);
-      while (nsrc > 0 && isspace(l->src[nsrc-1]))
+      while (nsrc > 0 && isspace((unsigned char)l->src[nsrc-1]))
         nsrc--;
       x = (pos < 20) ? pos : 20;
       y = (nsrc < 20) ? nsrc : 20;
@@ -1278,8 +1278,8 @@ static enum tokenkind scannumber(struct token *tok, struct lexer *l)
 static int scanchareschex(char *x, struct lexer *l)
 {
   int i = 0, v = 0;
-  assert(isxdigit(*l->src));
-  while (isxdigit(*l->src) && i++ < 2) {
+  assert(isxdigit((unsigned char)*l->src));
+  while (isxdigit((unsigned char)*l->src) && i++ < 2) {
     int d;
     if (isdigit((unsigned char) *l->src))
       d = (*l->src - '0');

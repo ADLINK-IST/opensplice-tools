@@ -488,7 +488,7 @@ static char *expand_envsimple (const char **src)
 {
   const char *start = *src;
   char *name, *x;
-  while (**src && (isalnum (**src) || **src == '_'))
+  while (**src && (isalnum ((unsigned char)**src) || **src == '_'))
     (*src)++;
   assert (*src > start);
   name = malloc ((size_t) (*src - start) + 1);
@@ -535,7 +535,7 @@ static char *expand_envvars (const char *src0)
       }
       else if (*src == '{')
         x = expand_envbrace (&src);
-      else if (isalnum (*src) || *src == '_')
+      else if (isalnum ((unsigned char) *src) || *src == '_')
         x = expand_envsimple (&src);
       else
         x = expand_envchar (&src);
