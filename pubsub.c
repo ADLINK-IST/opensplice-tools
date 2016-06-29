@@ -1779,7 +1779,7 @@ static char *pub_do_arb_line(const struct writerspec *spec, const char *line)
         }
         break;
       case 'Y': case 'B': case 'E': case 'W':
-        non_data_operation(*line, spec->wr);
+        non_data_operation(*line++, spec->wr);
         break;
       case 'S':
         make_persistent_snapshot(line+1);
