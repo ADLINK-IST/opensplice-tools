@@ -334,6 +334,8 @@ OPTIONS:\n\
                     pm   publication-matched\n\
                     oiq  offered-incompatible-qos\n\
                     odm  offered-deadline-missed\n\
+                  if no -S option given, then readers are created with riq,\n\
+                  writers with oiq, as these are nearly always actual issues\n\
   -z N            topic size (affects KeyedSeq only)\n\
   -F              set line-buffered mode\n\
   -@              echo everything on duplicate writer (only for interactive)\n\
@@ -2551,6 +2553,7 @@ int main (int argc, char *argv[])
   unsigned spec_sofar = 0;
   unsigned specidx = 0;
   unsigned i;
+  int statusmask_set = 0;
   double wait_for_matching_reader_timeout = 0.0;
   const char *wait_for_matching_reader_arg = NULL;
   struct spec *spec = NULL;
@@ -2830,6 +2833,7 @@ int main (int argc, char *argv[])
           char *copy = strdup (optarg), *tok, *lasts;
           if (copy == NULL)
             abort ();
+          statusmask_set = 1;
           tok = strtok_r (copy, ",", &lasts);
           while (tok)
           {
@@ -2927,6 +2931,12 @@ int main (int argc, char *argv[])
           want_writer = 1;
       }
     }
+  }
+
+  if (!statusmask_set)
+  {
+    wrstatusmask = DDS_OFFERED_INCOMPATIBLE_QOS_STATUS;
+    rdstatusmask = DDS_REQUESTED_INCOMPATIBLE_QOS_STATUS;
   }
 
   for (i = 0; i <= specidx; i++)
@@ -3167,6 +3177,7 @@ int main (int argc, char *argv[])
       pthread_create(&spec[i].rdtid, NULL, subthread, &spec[i].rd);
     }
   }
+
   if (want_writer || dur > 0)
   {
     int term_called = 0;
