@@ -369,6 +369,7 @@ SP;T;U  make persistent snapshot with given partition and topic\n\
                  N defaults to 1\n\
         N        Nth writer of all non-automatic writers\n\
         NAME     unique writer of which topic name starts with NAME\n\
+)     (a closing parenthesis) kill pubsub itself with signal SIGKILL\n\
 Note: for K*, OU types, in the above N is always a decimal\n\
 integer (possibly negative); because the OneULong type has no key\n\
 the actual key value is irrelevant for OU mode. For ARB types, N must be\n\
@@ -803,7 +804,7 @@ static int read_value (int fd, char *command, int *key, struct tstamp_t *tstamp,
         ungetc (c, stdin);
         return 1;
       }
-      case 'Y': case 'B': case 'E': case 'W':
+      case 'Y': case 'B': case 'E': case 'W': case ')':
         *command = (char) c;
         return 1;
       default:
@@ -1091,7 +1092,6 @@ static void print_sampleinfo (unsigned long long *tstart, unsigned long long tno
 
 static void print_K (unsigned long long *tstart, unsigned long long tnow, DDS_DataReader rd, const char *tag, const DDS_SampleInfo *si, int32_t keyval, uint32_t seq, DDS_ReturnCode_t (*getkeyval) (DDS_DataReader rd, int32_t *key, DDS_InstanceHandle_t ih))
 {
-  DDS_ReturnCode_t result;
   flockfile(stdout);
   print_sampleinfo(tstart, tnow, si, tag);
   if (si->valid_data)
@@ -1426,6 +1426,8 @@ static void non_data_operation(char command, DDS_DataWriter wr)
         error ("DDS_Publisher_wait_for_acknowledgements: error %d\n", (int) result);
       break;
     }
+    case ')':
+      kill (getpid (), SIGKILL);
     default:
       abort();
   }
@@ -1690,7 +1692,7 @@ static char *pub_do_nonarb(const struct writerspec *spec, int fdin, uint32_t *se
         else
           sleep ((unsigned) k);
         break;
-      case 'Y': case 'B': case 'E': case 'W':
+      case 'Y': case 'B': case 'E': case 'W': case ')':
         non_data_operation(command, spec->wr);
         break;
       case 'S':
@@ -1785,7 +1787,7 @@ static char *pub_do_arb_line(const struct writerspec *spec, const char *line)
           line += 1 + pos;
         }
         break;
-      case 'Y': case 'B': case 'E': case 'W':
+      case 'Y': case 'B': case 'E': case 'W': case ')':
         non_data_operation(*line++, spec->wr);
         break;
       case 'S':
