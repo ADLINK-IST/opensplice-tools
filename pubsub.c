@@ -1105,11 +1105,16 @@ static void print_K (unsigned long long *tstart, unsigned long long tnow, DDS_Da
        after our taking the sample, get_key_value _will_ fail.  So
        the blanket statement "may not look at value" if valid_data
        is not set means you can't really use take ...  */
+#if 1
+    printf ("NA %u\n", keyval);
+#else
+    DDS_ReturnCode_t result;
     int32_t d_key;
     if ((result = getkeyval (rd, &d_key, si->instance_handle)) == DDS_RETCODE_OK)
       printf ("NA %u\n", d_key);
     else
       printf ("get_key_value: error %d (%s)\n", (int) result, dds_strerror (result));
+#endif
   }
   funlockfile(stdout);
 }
