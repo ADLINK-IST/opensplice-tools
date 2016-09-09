@@ -357,6 +357,7 @@ DN    write dispose, key value N; D@T N as above\n\
 uN    unregister, key value N; u@T N as above\n\
 rN    register, key value N; u@T N as above\n\
 sN    sleep for N seconds\n\
+nN    nap for N microseconds\n\
 zN    set topic size to N (affects KeyedSeq only)\n\
 pX    set publisher partition to comma-separated list X\n\
 Y     dispose_all\n\
@@ -364,7 +365,7 @@ B     begin coherent changes\n\
 E     end coherent changes\n\
 SP;T;U  make persistent snapshot with given partition and topic\n\
       expressions and URI\n\
-:M    switch to writer M:\n\
+:M    switch to writer M, where M is:\n\
         +N, -N   next, previous Nth writer of all non-automatic writers\n\
                  N defaults to 1\n\
         N        Nth writer of all non-automatic writers\n\
@@ -783,7 +784,7 @@ static int read_value (int fd, char *command, int *key, struct tstamp_t *tstamp,
           return 1;
         }
         break;
-      case 'z': case 's':
+      case 'z': case 's': case 'n':
         *command = (char) c;
         if (read_int (fd, buf, sizeof (buf), 0, 0))
         {
@@ -1692,6 +1693,12 @@ static char *pub_do_nonarb(const struct writerspec *spec, int fdin, uint32_t *se
         else
           sleep ((unsigned) k);
         break;
+      case 'n':
+        if (k < 0)
+          printf ("invalid nap duration: %dus\n", k);
+        else
+          usleep ((unsigned) k);
+        break;
       case 'Y': case 'B': case 'E': case 'W': case ')':
         non_data_operation(command, spec->wr);
         break;
@@ -1784,6 +1791,15 @@ static char *pub_do_arb_line(const struct writerspec *spec, const char *line)
           line = NULL;
         } else {
           sleep ((unsigned) k);
+          line += 1 + pos;
+        }
+        break;
+      case 'n':
+        if (sscanf(line+1, "%d%n", &k, &pos) != 1 || k < 0) {
+          printf ("invalid nap duration: %dus\n", k);
+          line = NULL;
+        } else {
+          usleep ((unsigned) k);
           line += 1 + pos;
         }
         break;
