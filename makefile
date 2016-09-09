@@ -37,11 +37,25 @@ else
       CFLAGS  += -fsanitize=address
       LDFLAGS += -fsanitize=address
     endif
-  else # assume linux
-    CC = gcc -std=c99
-    OPT = -O3
-    CFLAGS = -g -Wall $(OPT)
-    DEPFLAG = -M
+  else
+    ifeq "$(PROC).$(OS)" "E500mc.linux"
+      CC = powerpc-fsl-linux-gcc
+      OPT = -O
+      SYSROOT = /opt/fsl-networking/QorIQ-SDK-V1.6/sysroots/ppce500mc-fsl-linux
+      CPPFLAGS += --sysroot=$(SYSROOT)
+      CFLAGS = -std=c99 -mcpu=e500mc -mtune=e500mc --sysroot=$(SYSROOT) -g -Wall $(OPT)
+      DEPFLAG = -M
+      LDFLAGS += -g --sysroot=$(SYSROOT)
+    else
+      ifneq "$(filter CYGWIN%, $(shell uname -s))" ""
+        OS = linux
+        X = .exe
+      endif
+      CC = gcc -std=gnu99
+      OPT = -O
+      CFLAGS = -g -Wall $(OPT)
+      DEPFLAG = -M
+    endif
   endif
 endif
 # Solaris and Linux seem to default to 32-bit code, Mac defaults to
