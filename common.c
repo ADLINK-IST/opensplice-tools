@@ -1127,21 +1127,39 @@ err:
 void qos_presentation (struct qos *a, const char *arg)
 {
   DDS_PresentationQosPolicy *qp = GET_QOS_PS (a, presentation);
+  const char *flags;
   if (qp == NULL)
     return;
-  if (strcmp (arg, "i") == 0) {
+  if (*arg == 'i') {
     qp->access_scope = DDS_INSTANCE_PRESENTATION_QOS;
     qp->coherent_access = 0;
-  } else if (strcmp (arg, "t") == 0) {
+    qp->ordered_access = 0;
+  } else if (*arg == 't') {
     qp->access_scope = DDS_TOPIC_PRESENTATION_QOS;
     qp->coherent_access = 1;
-  } else if (strcmp (arg, "g") == 0) {
+    qp->ordered_access = 0;
+  } else if (*arg == 'g') {
     qp->access_scope = DDS_GROUP_PRESENTATION_QOS;
     qp->coherent_access = 1;
+    qp->ordered_access = 0;
   } else {
     error ("presentation qos: %s: invalid\n", arg);
   }
-  qp->ordered_access = 0;
+  flags = arg + 1;
+  if (*flags == 'c') {
+    qp->coherent_access = 1;
+    flags++;
+  } else if (*flags == 'n' && *(flags+1) == 'c') {
+    qp->coherent_access = 0;
+    flags += 2;
+  }
+  if (*flags == 'a') {
+    qp->ordered_access = 1;
+    flags++;
+  }
+  if (*flags) {
+    error ("presentation qos: %s: invalid\n", arg);
+  }
 }
 
 void qos_autodispose_unregistered_instances (struct qos *a, const char *arg)
@@ -1155,6 +1173,14 @@ void qos_autodispose_unregistered_instances (struct qos *a, const char *arg)
     qp->autodispose_unregistered_instances = 1;
   else
     error ("autodispose_unregistered_instances qos: %s: invalid\n", arg);
+}
+
+void qos_autopurge_disposed_samples_delay (struct qos *a, const char *arg)
+{
+  DDS_ReaderDataLifecycleQosPolicy *qp = GET_QOS_R (a, reader_data_lifecycle);
+  if (qp == NULL)
+    return;
+  qos_simple_duration(&qp->autopurge_disposed_samples_delay, "autopurge_disposed_samples_delay", arg);
 }
 
 static unsigned split_string (char ***xs, const char *in, const char *sep)
@@ -1201,7 +1227,10 @@ QOS (not all are universally applicable):\n\
   o=[r|s]         order by reception or source timestamp (default: s)\n\
   O=[s|x[:S]]     ownership: shared or exclusive, strength S (default: s)\n\
   p=PRIO          transport priority (default: 0)\n\
-  P={i|t|g}       instance, or {topic|group} + coherent updates\n\
+  P={i|t|g}[c|nc][a]   instance, topic or group access scope\n\
+                  c|nc coherent_access = true|false (default is true\n\
+                       for topic/group, false for instance)\n\
+                  a    set ordered_access = true\n\
   r={y[:T]|s[:T]|n}  reliability, T is max blocking time in seconds,\n\
                   s is reliable+synchronous (default: y:1)\n\
   R=S/I/SpI       resource limits (samples, insts, S/I; default: inf/inf/inf)\n\
@@ -1209,6 +1238,7 @@ QOS (not all are universally applicable):\n\
   u={y|n}         autodispose unregistered instances (default: n)\n\
   U=TEXT          set user_data to TEXT\n\
   V=K0:K1:K2      set subscription keys\n\
+  x=D             auto-purge disposed instances delay\n\
 ";
 
 #if PRE_V6_5
@@ -1267,6 +1297,7 @@ void setqos_from_args (struct qos *q, int n, const char *args[])
           case 'u': qos_autodispose_unregistered_instances (q, a); break;
           case 'U': qos_user_data (q, a); break;
           case 'V': qos_subscription_keys (q, a); break;
+          case 'x': qos_autopurge_disposed_samples_delay (q, a); break;
           default:
             fprintf (stderr, "%s: unknown QoS\n", arg);
             exit (1);

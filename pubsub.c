@@ -300,8 +300,9 @@ OPTIONS:\n\
                     fields         field names, some white space\n\
                     multiline      field names, one field per line\n\
                   for non-once mode:\n\
-                    finaltake      print a \"final take\" notice before the results\n\
-                                   of the optional final take just before stopping\n\
+                    finaltake      print a \"final take\" notice before the\n\
+                                   results of the optional final take just\n\
+                                   before stopping\n\
                   default is \"nometa,state,fields,finalttake\".\n\
   -r              register instances (-wN mode only)\n\
   -R              use 'read' instead of 'take'\n\
@@ -1497,6 +1498,7 @@ static void pub_do_auto (const struct writerspec *spec)
       assert (!(fdin == -1 && fdservsock == -1));
       break;
   }
+  assert (nkeyvals > 0);
   for (k = 0; (uint32_t) k < nkeyvals; k++)
   {
     d.seq_keyval.keyval = k;
