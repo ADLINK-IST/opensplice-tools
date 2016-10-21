@@ -132,11 +132,16 @@ struct pings_pong_admin {
   unsigned long long tprint;
 };
 
-static void init_latency_admin (struct latency_admin *la)
+static void reinit_latency_admin (struct latency_admin *la)
 {
   la->dtsum = 0;
   la->dtmin = 1e10;
   la->count = 0;
+}
+
+static void init_latency_admin (struct latency_admin *la)
+{
+  reinit_latency_admin (la);
   la->seq = 0;
 }
 
@@ -176,7 +181,7 @@ static void print_latencies (struct pings_pong_admin *ppa)
         uint32_t systemId, localId;
         instancehandle_to_id (&systemId, &localId, ppa->pubhandles[i]);
         printf ("%" PRIx32 ":%" PRIx32 ":  %d rtts %g us avg %g us min\n", systemId, localId, la->count, 1e6 * la->dtsum / la->count, la->dtmin * 1e6);
-        init_latency_admin (la);
+        reinit_latency_admin (la);
       }
   }
 }
@@ -435,15 +440,13 @@ static void pingpong (enum side side, DDS_GuardCondition sigguard)
               t1 = nowll ();
               t0 = (unsigned long long) (iseq->_buffer[i].source_timestamp.sec * 1000000000ll + iseq->_buffer[i].source_timestamp.nanosec);
               pongidx = lookup_pong (&ppa, iseq->_buffer[i].publication_handle);
-              //if (d1->seq != d0->seq)
-              //  printf ("seq input: %u expected: %u\n", (unsigned) d1->seq, (unsigned) d0->seq);
               record_latency (&ppa.lats[pongidx], d1->baggage._length, (t1 - t0) / 1e9, d1->seq);
             }
           }
           KeyedSeqDataReader_return_loan (rd, mseq, iseq);
 
           print_latencies (&ppa);
-          if (side == SIDE_PING && all_pongs_responded(&ppa))
+          if (side != SIDE_PONG && all_pongs_responded(&ppa))
           {
             if ((nroundtrips > 0 && --nroundtrips == 0) || nowll() >= tend)
               terminate = 1;
@@ -609,6 +612,7 @@ int main (int argc, char *argv[])
   common_init (argv[0]);
 
   qos = new_tqos ();
+  qos_destination_order(qos, "r");
   setqos_from_args (qos, nqtopic, qtopic);
   tp = new_topic_KeyedSeq (topicname, qos);
   free_qos (qos);
