@@ -11,3 +11,7 @@ testtype.h
 testtypeDcps*
 testtypeSac*
 testtypeSpl*
+ddsicontrol.h
+ddsicontrolDcps*
+ddsicontrolSac*
+ddsicontrolSpl*

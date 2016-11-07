@@ -32,6 +32,7 @@
 #include "testtype.h"
 #include "tglib.h"
 #include "porting.h"
+#include "ddsicontrol.h"
 
 #if PRE_V6_5
 #define DDS_DataReader_read DDS__FooDataReader_read
@@ -52,6 +53,7 @@
 #define HOSTNAMESTR "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-." NUMSTR
 
 typedef DDS_ReturnCode_t (*write_oper_t) (DDS_DataWriter wr, void *d, DDS_InstanceHandle_t h, const DDS_Time_t *ts);
+static DDS_Topic find_topic(DDS_DomainParticipant dp, const char *name, const DDS_Duration_t *timeout);
 
 enum topicsel { UNSPEC, KS, K32, K64, K128, K256, OU, ARB };
 enum readermode { MODE_PRINT, MODE_CHECK, MODE_ZEROLOAD, MODE_DUMP, MODE_NONE };
@@ -84,6 +86,9 @@ static enum tgprint_mode printmode = TGPM_FIELDS;
 static unsigned print_metadata = PM_STATE;
 static int printtype = 0;
 static int print_final_take_notice = 1;
+static DDS_Topic ddsi_control_topic = DDS_HANDLE_NIL;
+static DDS_Publisher ddsi_control_pub;
+static q_osplserModule_ddsi_controlDataWriter ddsi_control_wr;
 
 #define T_SECOND ((int64_t) 1000000000)
 struct tstamp_t {
@@ -366,6 +371,10 @@ B     begin coherent changes\n\
 E     end coherent changes\n\
 SP;T;U  make persistent snapshot with given partition and topic\n\
       expressions and URI\n\
+CT;F;D  write DDSI control topic (if feature enabled in config)\n\
+      T = {self|all|id} systemId of target\n\
+      F = [md]* flags, m = mute, d = deaf\n\
+      D = duration in seconds (floating or \"inf\")\n\
 :M    switch to writer M, where M is:\n\
         +N, -N   next, previous Nth writer of all non-automatic writers\n\
                  N defaults to 1\n\
@@ -635,6 +644,89 @@ err:
   free(px);
 }
 
+static void instancehandle_to_id (uint32_t *systemId, uint32_t *localId, DDS_InstanceHandle_t h)
+{
+  /* Undocumented and unsupported trick */
+  union { struct { uint32_t systemId, localId; } s; DDS_InstanceHandle_t h; } u;
+  u.h = h;
+  *systemId = u.s.systemId & ~0x80000000;
+  *localId = u.s.localId;
+}
+
+static void do_ddsi_control(const char *args)
+{
+  q_osplserModule_ddsi_control x;
+  const char *a = args;
+  struct qos *qos;
+  int pos;
+  memset(&x, 0, sizeof(x));
+
+  if (ddsi_control_topic == NULL) {
+    /* If enabled, topic exists, or will exist very soon; if disabled, we don't want to wait
+       for long. 100ms seems like a reasonable compromise. */
+    DDS_Duration_t to = { 0, 100000000 };
+    if ((ddsi_control_topic = find_topic(dp, "q_ddsiControl", &to)) == NULL) {
+      printf ("DDS_DomainParticipant_find_topic(\"q_ddsiControl\") failed\n");
+      return;
+    }
+
+  }
+  if (strncmp(a, "self", 4) == 0) {
+    uint32_t systemId, localId;
+    instancehandle_to_id (&systemId, &localId, DDS_Entity_get_instance_handle (dp));
+    x.systemId = systemId;
+    a += 4;
+  } else if (strncmp(a, "all", 3) == 0) {
+    x.systemId = 0;
+    a += 3;
+  } else if (sscanf(a, "%u%n", &x.systemId, &pos) == 1) {
+    a += pos;
+  } else {
+    printf ("ddsi control: invalid args: %s\n", args);
+    return;
+  }
+  if (*a++ != ';') {
+    printf ("ddsi control: invalid args: %s\n", args);
+    return;
+  }
+  while (*a && *a != ';') {
+    switch (*a++) {
+      case 'm': x.mute = 1; break;
+      case 'd': x.deaf = 1; break;
+      default: printf ("ddsi control: invalid flags: %s\n", args); return;
+    }
+  }
+  if (*a++ != ';') {
+    printf ("ddsi control: invalid args: %s\n", args);
+    return;
+  }
+  if (strcmp(a, "inf") == 0) {
+    x.duration = 0.0;
+  } else if (sscanf(a, "%lf%n", &x.duration, &pos) == 1 && a[pos] == 0) {
+    if (x.duration <= 0.0) {
+      printf ("ddsi control: invalid duration (<= 0): %s\n", args);
+      return;
+    }
+  } else {
+    printf ("ddsi control: invalid args: %s\n", args);
+    return;
+  }
+
+  if (ddsi_control_wr == NULL)
+  {
+    qos = new_pubqos();
+    qos_presentation(qos, "tnc");
+    ddsi_control_pub = new_publisher1(qos, "__BUILT-IN PARTITION__");
+    free_qos(qos);
+    qos = new_wrqos(ddsi_control_pub, ddsi_control_topic);
+    qos_autodispose_unregistered_instances(qos, "n");
+    ddsi_control_wr = new_datawriter(qos);
+    free_qos(qos);
+  }
+
+  q_osplserModule_ddsi_controlDataWriter_write(ddsi_control_wr, &x, DDS_HANDLE_NIL);
+}
+
 static int fd_getc (int fd)
 {
   /* like fgetc, but also returning EOF when need to terminate */
@@ -793,7 +885,7 @@ static int read_value (int fd, char *command, int *key, struct tstamp_t *tstamp,
           return 1;
         }
         break;
-      case 'p': case 'S': case ':': {
+      case 'p': case 'S': case 'C': case ':': {
         int i = 0;
         *command = (char) c;
         while ((c = fd_getc (fd)) != EOF && !isspace ((unsigned char) c))
@@ -1039,15 +1131,6 @@ static DDS_ReturnCode_t getkeyval_K256 (Keyed256DataReader rd, int32_t *key, DDS
   return result;
 }
 
-static void instancehandle_to_id (uint32_t *systemId, uint32_t *localId, DDS_InstanceHandle_t h)
-{
-  /* Undocumented and unsupported trick */
-  union { struct { uint32_t systemId, localId; } s; DDS_InstanceHandle_t h; } u;
-  u.h = h;
-  *systemId = u.s.systemId & ~0x80000000;
-  *localId = u.s.localId;
-}
-
 static void print_sampleinfo (unsigned long long *tstart, unsigned long long tnow, const DDS_SampleInfo *si, const char *tag)
 {
   unsigned long long relt;
@@ -1108,6 +1191,8 @@ static void print_K (unsigned long long *tstart, unsigned long long tnow, DDS_Da
        the blanket statement "may not look at value" if valid_data
        is not set means you can't really use take ...  */
 #if 1
+    (void)rd;
+    (void)getkeyval;
     printf ("NA %u\n", keyval);
 #else
     DDS_ReturnCode_t result;
@@ -1430,6 +1515,7 @@ static void non_data_operation(char command, DDS_DataWriter wr)
     }
     case ')':
       kill (getpid (), SIGKILL);
+      break;
     default:
       abort();
   }
@@ -1704,6 +1790,9 @@ static char *pub_do_nonarb(const struct writerspec *spec, int fdin, uint32_t *se
       case 'Y': case 'B': case 'E': case 'W': case ')':
         non_data_operation(command, spec->wr);
         break;
+      case 'C':
+        do_ddsi_control(arg);
+        break;
       case 'S':
         make_persistent_snapshot(arg);
         break;
@@ -1807,6 +1896,10 @@ static char *pub_do_arb_line(const struct writerspec *spec, const char *line)
         break;
       case 'Y': case 'B': case 'E': case 'W': case ')':
         non_data_operation(*line++, spec->wr);
+        break;
+      case 'C':
+        do_ddsi_control(line+1);
+        line = NULL;
         break;
       case 'S':
         make_persistent_snapshot(line+1);
@@ -3079,6 +3172,9 @@ int main (int argc, char *argv[])
       free_qos (qos);
     }
   }
+
+  /* In case of coherent subscription */
+  DDS_Entity_enable(sub);
 
   if (want_writer && wait_for_matching_reader_arg)
   {

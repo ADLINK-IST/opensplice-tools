@@ -1,0 +1,12 @@
+module q_osplserModule {
+  struct ddsi_control {
+    unsigned long systemId;
+    unsigned long localId;
+    unsigned long serial;
+    boolean deaf;
+    boolean mute;
+    double duration; /* 0: infinite */
+  };
+  
+#pragma keylist ddsi_control systemId localId serial
+};

@@ -33,9 +33,9 @@ else
     CFLAGS = -g -Wall $(OPT)
     LDFLAGS += -g
     DEPFLAG = -M
-    ifeq "$(USE_ADDRESS_SANITIZER)" "yes"
-      CFLAGS  += -fsanitize=address
-      LDFLAGS += -fsanitize=address
+    ifneq "$(USE_SANITIZER)" ""
+      CFLAGS  += -fsanitize=$(USE_SANITIZER)
+      LDFLAGS += -fsanitize=$(USE_SANITIZER)
     endif
   else
     ifeq "$(PROC).$(OS)" "E500mc.linux"
@@ -125,7 +125,7 @@ endif
 TARGETS = pubsub$X lsbuiltin$X pingpong$X
 IDL_common := testtype
 # ... and those really required per target ...
-IDL_pubsub := testtype
+IDL_pubsub := testtype ddsicontrol
 IDL_pingpong := testtype
 # ... and the set of all IDL files ($(sort) removes duplicates)
 IDLMODS := $(sort $(foreach x, common $(TARGETS), $(IDL_$(subst -,_,$x))))

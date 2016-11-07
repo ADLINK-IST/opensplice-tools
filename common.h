@@ -42,6 +42,8 @@ DDS_ReturnCode_t change_publisher_partitions (DDS_Publisher pub, unsigned nparti
 DDS_ReturnCode_t change_subscriber_partitions (DDS_Subscriber pub, unsigned npartitions, const char *partitions[]);
 DDS_Publisher new_publisher (const struct qos *a, unsigned npartitions, const char **partitions);
 DDS_Subscriber new_subscriber (const struct qos *a, unsigned npartitions, const char **partitions);
+DDS_Publisher new_publisher1 (const struct qos *a, const char *partition);
+DDS_Subscriber new_subscriber1 (const struct qos *a, const char *partition);
 struct qos *new_tqos (void);
 struct qos *new_pubqos (void);
 struct qos *new_subqos (void);
@@ -77,6 +79,10 @@ void qos_latency_budget (struct qos *a, const char *arg);
 void qos_lifespan (struct qos *a, const char *arg);
 void qos_autodispose_unregistered_instances (struct qos *a, const char *arg);
 void qos_subscription_keys (struct qos *a, const char *arg);
+void qos_presentation (struct qos *a, const char *arg);
+void qos_durability_service (struct qos *a, const char *arg);
+void qos_autopurge_disposed_samples_delay (struct qos *a, const char *arg);
+void qos_autoenable (struct qos *a, const char *arg);
 void set_qosprovider (const char *arg);
 void setqos_from_args (struct qos *q, int n, const char *args[]);
 

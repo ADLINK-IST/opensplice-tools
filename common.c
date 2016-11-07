@@ -589,6 +589,11 @@ DDS_Publisher new_publisher (const struct qos *a, unsigned npartitions, const ch
   return p;
 }
 
+DDS_Publisher new_publisher1 (const struct qos *a, const char *partition)
+{
+  return new_publisher(a, 1, &partition);
+}
+
 DDS_Subscriber new_subscriber (const struct qos *a, unsigned npartitions, const char **partitions)
 {
   DDS_SubscriberQos *sQos;
@@ -611,6 +616,11 @@ DDS_Subscriber new_subscriber (const struct qos *a, unsigned npartitions, const 
     error ("DDS_DomainParticipant_create_subscriber\n");
   DDS_free (sQos);
   return s;
+}
+
+DDS_Subscriber new_subscriber1 (const struct qos *a, const char *partition)
+{
+  return new_subscriber(a, 1, &partition);
 }
 
 DDS_DataWriter new_datawriter_listener (const struct qos *a, const struct DDS_DataWriterListener *l, DDS_StatusMask mask)
@@ -1214,6 +1224,19 @@ void qos_subscription_keys (struct qos *a, const char *arg)
     free (xs[i]);
   }
   free (xs);
+}
+
+void qos_autoenable (struct qos *a, const char *arg)
+{
+  DDS_EntityFactoryQosPolicy *qp = GET_QOS_PS (a, entity_factory);
+  if (qp == NULL)
+    return;
+  if (strcmp (arg, "n") == 0)
+    qp->autoenable_created_entities = 0;
+  else if (strcmp (arg, "y") == 0)
+    qp->autoenable_created_entities = 1;
+  else
+    error ("autodispose_unregistered_instances qos: %s: invalid\n", arg);
 }
 
 const char *qos_arg_usagestr = "\
