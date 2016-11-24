@@ -118,6 +118,7 @@ _Q_ | _S_          | applicability | meaning
 `u` | {y,n} | w | set autodispose unregistered instances to true/false
 `U` | _T_ | r, w | set user data to _T_, C-style escape-sequence processing is applied
 `V` | _K0_[:_K1_[:...]] | r | set subscriber-defined keys to fields _K0_, _K1_, &c.
+`x` | _D_ | r | set auto-purge disposed instances delay
 
 All durations are in seconds and may be floating-point numbers. Durations and limits also accept "inf" for infinite/unlimited.
 
@@ -232,6 +233,7 @@ _V_     |           | synonym for the `w` command
 `u`     | _V_       | unregister _V_
 `r`     | _V_       | register _V_
 `s`     | _N_       | sleep for _N_ seconds (_N_ an integer)
+`n`     | _N_       | sleep ("nap") for _N_ microseconds (_N_ an integer)
 `z`     | _N_       | set sequence size to _N_-12 (KS only, see also `-z` option)
 `p`     | _PS_      | set publisher partitions to the comma-separated list _PS_ (note that QoS changes are not supported by the DDSI2 service at the time of writing)
 `Y`     |           | invoke the "dispose_all" operation on the topic
@@ -239,6 +241,7 @@ _V_     |           | synonym for the `w` command
 `E`     |           | end coherent changes
 `W`     |           | wait_for_acknowledgements with timeout set to infinite
 `S`     | _P_;_T_;_U_ | make a persistent snapshot for partition expression _P_, topic expression _T_, and destination URI _U_
+`C`     | _T_;_F_;_D_ | write DDSI control topic (if feature enabled in config): _T_ = {`self`|`all`|_id_} systemId of target; _F_ = {`d`|`m`|`dm`} whether deaf, mute or deafmute; D = duration in seconds (floating or `inf`)
 `:`     | _N_       | select the non-auto writer number _N_ (0-based), if _N_ has a sign, move towards the right (+) or the left (-) _N_-th non-auto writer
 `:`     | _NAME_    | select the unique writer of which the topic name starts with _NAME_
 
