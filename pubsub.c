@@ -101,6 +101,7 @@ struct readerspec {
   enum topicsel topicsel;
   struct tgtopic *tgtp;
   enum readermode mode;
+  int exit_on_out_of_seq;
   int use_take;
   unsigned sleep_us;
   int polling;
@@ -135,6 +136,7 @@ static const struct readerspec def_readerspec = {
   .topicsel = UNSPEC,
   .tgtp = NULL,
   .mode = MODE_PRINT,
+  .exit_on_out_of_seq = 0,
   .use_take = 1,
   .sleep_us = 0,
   .polling = 0,
@@ -214,17 +216,17 @@ static int open_tcpserver_sock (int port)
   if ((fd = socket (AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1)
   {
     perror ("socket()");
-    exit (1); /* will kill any waiting threads */
+    exit (2); /* will kill any waiting threads */
   }
   if (bind (fd, (struct sockaddr *) &saddr, sizeof (saddr)) == -1)
   {
     perror ("bind()");
-    exit (1); /* will kill any waiting threads */
+    exit (2); /* will kill any waiting threads */
   }
   if (listen (fd, 1) == -1)
   {
     perror ("listen()");
-    exit (1); /* will kill any waiting threads */
+    exit (2); /* will kill any waiting threads */
   }
   printf ("listening ... ");
   fflush (stdout);
@@ -275,7 +277,8 @@ OPTIONS:\n\
                   those of the DCPS API (topics default to by-source ordering\n\
                   and reliability, and readers and writers to the topic QoS),\n\
                   which may cause surprises :)\n\
-  -m [0|p[p]|c[p][:N]|z|d[p]]  no reader, print values, check sequence numbers\n\
+  -m [0|p[p]|{c|x}[p][:N]|z|d[p]]  no reader, print values, check sequence\n\
+                  numbers (x: exit 1 on receipt of out of sequence samples)\n\
                   (expecting N keys), \"zero-load\" mode or \"dump\" mode (which\n\
                   is differs from \"print\" primarily because it uses a data-\n\
                   available trigger and reads all samples in read-mode(default:\n\
@@ -389,7 +392,7 @@ a valid initializer. X must always be a list of names.\n\
 When invoked as \"sub\", default is -w0 (no writer)\n\
 When invoked as \"pub\", default is -m0 (no reader)\n",
            argv0, qos_arg_usagestr);
-  exit (1);
+  exit (3);
 }
 
 static void expand_append (char **dst, size_t *sz, size_t *pos, char c)
@@ -747,7 +750,7 @@ static int fd_getc (int fd)
     if (r == -1)
     {
       perror("fd_getc: select()");
-      exit(1);
+      exit(2);
     }
 
     if (FD_ISSET(termpipe[0], &fds))
@@ -765,7 +768,7 @@ static int fd_getc (int fd)
       else if (errno != EINTR)
       {
         perror("fd_getc: read()");
-        exit(1);
+        exit(2);
       }
       /* else try again */
     }
@@ -1434,7 +1437,7 @@ static int w_accept(int fd)
     if (r == -1)
     {
       perror("w_accept: select()");
-      exit(1);
+      exit(2);
     }
 
     if (FD_ISSET(termpipe[0], &fds))
@@ -1449,7 +1452,7 @@ static int w_accept(int fd)
         if (errno != EINTR)
         {
           perror ("accept()");
-          exit (1);
+          exit (2);
         }
       }
       printf ("to %s\n", inet_ntoa (saddr.sin_addr));
@@ -1746,13 +1749,13 @@ static char *pub_do_nonarb(const struct writerspec *spec, int fdin, uint32_t *se
         {
           printf ("%s %d: error %d (%s)\n", get_write_operstr(command), k, (int) result, dds_strerror(result));
           if (!accept_error (command, result))
-            exit(1);
+            exit(2);
         }
         if (spec->dupwr && (result = fn (spec->dupwr, &d, DDS_HANDLE_NIL, &tstamp)) != DDS_RETCODE_OK)
         {
           printf ("%s %d(dup): error %d (%s)\n", get_write_operstr(command), k, (int) result, dds_strerror(result));
           if (!accept_error (command, result))
-            exit(1);
+            exit(2);
         }
         d.seq++;
         break;
@@ -1865,7 +1868,7 @@ static char *pub_do_arb_line(const struct writerspec *spec, const char *line)
             {
               line = NULL;
               if (!isatty(fdin))
-                exit(1);
+                exit(2);
               break;
             }
           }
@@ -2280,7 +2283,24 @@ static void *subthread (void *vspec)
                 case ARB:  assert(0); break; /* can't check what we don't know */
               }
               if (!check_eseq (&eseq_admin, seq, (unsigned)keyval, iseq->_buffer[i].publication_handle))
+              {
                 out_of_seq++;
+                if (spec->exit_on_out_of_seq)
+                {
+                  switch (spec->topicsel) {
+                    case UNSPEC: assert(0);
+                    case KS:   print_seq_KS (&tstart, tnow, rd, tag, iseq, mseq.ks); break;
+                    case K32:  print_seq_K32 (&tstart, tnow, rd, tag, iseq, mseq.k32); break;
+                    case K64:  print_seq_K64 (&tstart, tnow, rd, tag, iseq, mseq.k64); break;
+                    case K128: print_seq_K128 (&tstart, tnow, rd, tag, iseq, mseq.k128); break;
+                    case K256: print_seq_K256 (&tstart, tnow, rd, tag, iseq, mseq.k256); break;
+                    case OU:   print_seq_OU (&tstart, tnow, rd, tag, iseq, mseq.ou); break;
+                    case ARB:  print_seq_ARB (&tstart, tnow, rd, tag, iseq, mseq.any, spec->tgtp); break;
+                  }
+                  exitcode = 1;
+                  terminate();
+                }
+              }
               if (nreceived == 0)
               {
                 tfirst = tnow;
@@ -2288,7 +2308,7 @@ static void *subthread (void *vspec)
               }
               nreceived++;
               nreceived_bytes += size;
-              if (tnow - tprint >= 1000000000ll)
+              if (tnow - tprint >= 1000000000ll || termflag)
               {
                 const unsigned long long tdelta_ns = tnow - tfirst;
                 const unsigned long long tdelta_s = tdelta_ns / 1000000000;
@@ -2635,7 +2655,7 @@ static void set_print_mode (const char *optarg)
       else
       {
         fprintf (stderr, "-P %s: invalid print mode\n", optarg);
-        exit (2);
+        exit (3);
       }
     }
   }
@@ -2732,7 +2752,7 @@ int main (int argc, char *argv[])
         if (sscanf(optarg, "%lf:%n", &wait_for_matching_reader_timeout, &pos) != 1)
         {
           fprintf (stderr, "-M %s: invalid timeout\n", optarg);
-          exit (2);
+          exit (3);
         }
         wait_for_matching_reader_arg = optarg + pos;
         break;
@@ -2760,7 +2780,7 @@ int main (int argc, char *argv[])
         else
         {
           fprintf (stderr, "-K %s: unknown type\n", optarg);
-          exit (2);
+          exit (3);
         }
         break;
       case 'T': {
@@ -2798,7 +2818,7 @@ int main (int argc, char *argv[])
           const char *colon = strchr(optarg, ':');
           if (colon == NULL || n == 0 || n != (unsigned long) (colon - optarg)) {
             fprintf (stderr, "-q %s: flags indicating to which entities QoS's apply must match regex \"[^atrwps]+:\"\n", optarg);
-            exit(2);
+            exit(3);
           } else {
             const char *q = colon+1;
             for (const char *flag = optarg; flag != colon; flag++)
@@ -2841,6 +2861,14 @@ int main (int argc, char *argv[])
           spec[specidx].rd.mode = MODE_CHECK, spec[specidx].rd.polling = 1;
         else if (sscanf (optarg, "cp:%d%n", &nkeyvals, &pos) == 1 && optarg[pos] == 0)
           spec[specidx].rd.mode = MODE_CHECK, spec[specidx].rd.polling = 1;
+        else if (strcmp (optarg, "x") == 0)
+          spec[specidx].rd.mode = MODE_CHECK, spec[specidx].rd.exit_on_out_of_seq = 1;
+        else if (sscanf (optarg, "x:%d%n", &nkeyvals, &pos) == 1 && optarg[pos] == 0)
+          spec[specidx].rd.mode = MODE_CHECK, spec[specidx].rd.exit_on_out_of_seq = 1;
+        else if (strcmp (optarg, "xp") == 0)
+          spec[specidx].rd.mode = MODE_CHECK, spec[specidx].rd.polling = 1, spec[specidx].rd.exit_on_out_of_seq = 1;
+        else if (sscanf (optarg, "xp:%d%n", &nkeyvals, &pos) == 1 && optarg[pos] == 0)
+          spec[specidx].rd.mode = MODE_CHECK, spec[specidx].rd.polling = 1, spec[specidx].rd.exit_on_out_of_seq = 1;
         else if (strcmp (optarg, "z") == 0)
           spec[specidx].rd.mode = MODE_ZEROLOAD;
         else if (strcmp (optarg, "d") == 0)
@@ -2850,7 +2878,7 @@ int main (int argc, char *argv[])
         else
         {
           fprintf (stderr, "-m %s: invalid mode\n", optarg);
-          exit (2);
+          exit (3);
         }
         break;
       case 'w': {
@@ -2891,7 +2919,7 @@ int main (int argc, char *argv[])
           if ((fdin = open (optarg, O_RDONLY)) < 0)
           {
             fprintf (stderr, "%s: can't open\n", optarg);
-            exit (1);
+            exit (3);
           }
           spec[specidx].wr.mode = WM_INPUT;
         }
@@ -2929,7 +2957,7 @@ int main (int argc, char *argv[])
           else
           {
             fprintf (stderr, "-W %s: invalid duration\n", optarg);
-            exit (2);
+            exit (3);
           }
         }
         break;
@@ -2969,7 +2997,7 @@ int main (int argc, char *argv[])
             else
             {
               fprintf (stderr, "-S %s: invalid event\n", tok);
-              exit (2);
+              exit (3);
             }
             tok = strtok_r (NULL, ",", &lasts);
           }
@@ -2983,7 +3011,7 @@ int main (int argc, char *argv[])
         if (tmp != 0 && tmp < 12)
         {
           fprintf (stderr, "-z %s: minimum is 12\n", optarg);
-          exit (1);
+          exit (3);
         }
         else if (tmp == 0)
           spec[specidx].wr.baggagesize = 0;
