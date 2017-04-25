@@ -964,6 +964,7 @@ void qos_liveliness (struct qos *a, const char *arg)
 {
   DDS_LivelinessQosPolicy *qp = GET_QOS_TRW (a, liveliness);
   double lease_duration;
+  char mode;
   int pos;
   if (qp == NULL)
     return;
@@ -972,17 +973,17 @@ void qos_liveliness (struct qos *a, const char *arg)
     qp->kind = DDS_AUTOMATIC_LIVELINESS_QOS;
     set_infinite_dds_duration (&qp->lease_duration);
   }
-  else if (sscanf (arg, "p:%lf%n", &lease_duration, &pos) == 1 && arg[pos] == 0)
+  else if (sscanf (arg, "%c:%lf%n", &mode, &lease_duration, &pos) == 2 && arg[pos] == 0)
   {
     if (lease_duration <= 0 || double_to_dds_duration (&qp->lease_duration, lease_duration) < 0)
       error ("liveliness qos: %s: lease duration out of range\n", arg);
-    qp->kind = DDS_MANUAL_BY_PARTICIPANT_LIVELINESS_QOS;
-  }
-  else if (sscanf (arg, "w:%lf%n", &lease_duration, &pos) == 1 && arg[pos] == 0)
-  {
-    if (lease_duration <= 0 || double_to_dds_duration (&qp->lease_duration, lease_duration) < 0)
-      error ("liveliness qos: %s: lease duration out of range\n", arg);
-    qp->kind = DDS_MANUAL_BY_TOPIC_LIVELINESS_QOS;
+    switch (mode)
+    {
+      case 'a': qp->kind = DDS_AUTOMATIC_LIVELINESS_QOS; break;
+      case 'p': qp->kind = DDS_MANUAL_BY_PARTICIPANT_LIVELINESS_QOS; break;
+      case 'w': qp->kind = DDS_MANUAL_BY_TOPIC_LIVELINESS_QOS; break;
+      default:  error ("liveliness qos: %c: invalid mode\n", mode);
+    }
   }
   else
   {
