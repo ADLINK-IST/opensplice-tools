@@ -82,8 +82,9 @@ static double dur = 0.0;
 static int sigpipe[2];
 static int termpipe[2];
 static int fdin = 0;
-static enum tgprint_mode printmode = TGPM_FIELDS;
+static enum tgprint_mode print_mode = TGPM_FIELDS;
 static unsigned print_metadata = PM_STATE;
+static unsigned print_chop = 0xffffffff;
 static int printtype = 0;
 static int print_final_take_notice = 1;
 static DDS_Topic ddsi_control_topic = DDS_HANDLE_NIL;
@@ -307,6 +308,7 @@ OPTIONS:\n\
                     dense          no additional white space, no field names\n\
                     fields         field names, some white space\n\
                     multiline      field names, one field per line\n\
+                    chop:N         chop to N characters (N = 0 is allowed)\n\
                   for non-once mode:\n\
                     finaltake      print a \"final take\" notice before the\n\
                                    results of the optional final take just\n\
@@ -1134,7 +1136,7 @@ static DDS_ReturnCode_t getkeyval_K256 (Keyed256DataReader rd, int32_t *key, DDS
   return result;
 }
 
-static void print_sampleinfo (unsigned long long *tstart, unsigned long long tnow, const DDS_SampleInfo *si, const char *tag)
+static int print_sampleinfo (unsigned long long *tstart, unsigned long long tnow, const DDS_SampleInfo *si, const char *tag)
 {
   unsigned long long relt;
   uint32_t phSystemId, phLocalId, ihSystemId, ihLocalId;
@@ -1174,14 +1176,14 @@ static void print_sampleinfo (unsigned long long *tstart, unsigned long long tno
   sep = " : ";
   if (print_metadata & PM_STATE)
     n += printf ("%s%c%c%c", n > 0 ? sep : "", isc, ssc, vsc), sep = " ";
-  if (n > 0)
-    printf(" : ");
+  return (n > 0);
 }
 
 static void print_K (unsigned long long *tstart, unsigned long long tnow, DDS_DataReader rd, const char *tag, const DDS_SampleInfo *si, int32_t keyval, uint32_t seq, DDS_ReturnCode_t (*getkeyval) (DDS_DataReader rd, int32_t *key, DDS_InstanceHandle_t ih))
 {
   flockfile(stdout);
-  print_sampleinfo(tstart, tnow, si, tag);
+  if (print_sampleinfo(tstart, tnow, si, tag))
+    printf(" : ");
   if (si->valid_data)
     printf ("%u %d\n", seq, keyval);
   else
@@ -1251,7 +1253,8 @@ static void print_seq_OU (unsigned long long *tstart, unsigned long long tnow, O
   {
     DDS_SampleInfo const * const si = &iseq->_buffer[i];
     flockfile(stdout);
-    print_sampleinfo(tstart, tnow, si, tag);
+    if (print_sampleinfo(tstart, tnow, si, tag))
+      printf(" : ");
     if (si->valid_data) {
       OneULong *d = &mseq->_buffer[i];
       printf ("%u\n", d->seq);
@@ -1268,14 +1271,18 @@ static void print_seq_ARB (unsigned long long *tstart, unsigned long long tnow, 
   for (i = 0; i < mseq->_length; i++)
   {
     DDS_SampleInfo const * const si = &iseq->_buffer[i];
+    struct tgstring str;
+    tgstring_init(&str, print_chop);
     flockfile(stdout);
-    print_sampleinfo(tstart, tnow, si, tag);
+    if (print_sampleinfo(tstart, tnow, si, tag) && print_chop > 0)
+      printf(" : ");
     if (si->valid_data)
-      tgprint(stdout, tgtp, (char *) mseq->_buffer + i * tgtp->size, printmode);
+      (void)tgprint(&str, tgtp, (char *) mseq->_buffer + i * tgtp->size, print_mode);
     else
-      tgprintkey(stdout, tgtp, (char *) mseq->_buffer + i * tgtp->size, printmode);
-    printf("\n");
+      (void)tgprintkey(&str, tgtp, (char *) mseq->_buffer + i * tgtp->size, print_mode);
+    printf("%s\n", str.buf);
     funlockfile(stdout);
+    tgstring_fini(&str);
   }
 }
 
@@ -2606,7 +2613,9 @@ static void addspec(unsigned whatfor, unsigned *specsofar, unsigned *specidx, st
 static void set_print_mode (const char *optarg)
 {
   char *copy = strdup(optarg), *cursor = copy, *tok;
+  unsigned chop = 0;
   while ((tok = strsep(&cursor, ",")) != NULL) {
+    int pos;
     int enable;
     if (strncmp(tok, "no", 2) == 0)
       enable = 0, tok += 2;
@@ -2617,13 +2626,15 @@ static void set_print_mode (const char *optarg)
     else if (strcmp(tok, "finaltake") == 0)
       print_final_take_notice = enable;
     else if (strcmp(tok, "dense") == 0)
-      printmode = TGPM_DENSE;
+      print_mode = TGPM_DENSE;
     else if (strcmp(tok, "space") == 0)
-      printmode = TGPM_SPACE;
+      print_mode = TGPM_SPACE;
     else if (strcmp(tok, "fields") == 0)
-      printmode = TGPM_FIELDS;
+      print_mode = TGPM_FIELDS;
     else if (strcmp(tok, "multiline") == 0)
-      printmode = TGPM_MULTILINE;
+      print_mode = TGPM_MULTILINE;
+    else if (sscanf(tok, "chop:%u%n", &chop, &pos) == 1 && tok[pos] == 0)
+      print_chop = chop;
     else
     {
       static struct { const char *name; unsigned flag; } tab[] = {
