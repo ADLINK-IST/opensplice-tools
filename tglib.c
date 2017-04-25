@@ -869,65 +869,112 @@ static void storedisc(char *dst, const struct tgtype *t, uint64_t v)
   }
 }
 
-static void printchar(FILE *fp, int ch, int quote)
+void tgstring_init(struct tgstring *s, size_t chop)
+{
+  s->size = 4096;
+  s->buf = malloc(s->size);
+  s->buf[0] = 0;
+  s->pos = 0;
+  s->chop = chop;
+  s->chopped = 0;
+}
+
+void tgstring_fini(struct tgstring *s)
+{
+  free(s->buf);
+  tgstring_init(s, s->chop);
+}
+
+static int tgprintf(struct tgstring *s, const char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
+
+static int tgprintf(struct tgstring *s, const char *fmt, ...)
+{
+  int n;
+  va_list ap;
+  if (s->chopped)
+    return 0;
+  assert (s->pos < s->size);
+  va_start(ap, fmt);
+  n = vsnprintf(s->buf + s->pos, s->size - s->pos, fmt, ap);
+  va_end(ap);
+  while (n >= 0 && (size_t)n >= s->size - s->pos)
+  {
+    static size_t chunk = 4096-1;
+    s->size += ((size_t)n+1 + (chunk-1)) & ~(chunk-1);
+    s->buf = realloc(s->buf, s->size);
+    va_start(ap, fmt);
+    n = vsnprintf(s->buf + s->pos, s->size - s->pos, fmt, ap);
+    va_end(ap);
+  }
+  if (n > 0)
+    s->pos += (size_t)n;
+  assert(s->pos < s->size);
+  if (s->pos > s->chop)
+  {
+    s->pos = s->chop;
+    s->buf[s->chop] = 0;
+    s->chopped = 1;
+  }
+  return !s->chopped;
+}
+
+static int printchar(struct tgstring *s, int ch, int quote)
 {
   assert(ch >= 0);
-  if (ch == quote)
-    fprintf(fp, "\\%c", ch);
+  if (ch == quote || ch == '\\')
+    return tgprintf(s, "\\%c", ch);
   else if (isprint(ch))
-    fprintf(fp, "%c", ch);
+    return tgprintf(s, "%c", ch);
   else
-    fprintf(fp, "\\x%02x", ch);
+    return tgprintf(s, "\\x%02x", ch);
 }
 
 static unsigned isprint_runlen (const unsigned char *s, unsigned n)
 {
   unsigned m;
-  for (m = 0; m < n && isprint (s[m]); m++)
+  for (m = 0; m < n && s[m] != '"' && s[m] != '\\' && isprint (s[m]); m++)
     ;
   return m;
 }
 
-static void tgprint1(FILE *fp, const struct tgtype *t, const char *data, int indent, enum tgprint_mode mode)
+static int tgprint1(struct tgstring *s, const struct tgtype *t, const char *data, int indent, enum tgprint_mode mode)
 {
   const char *space = (mode == TGPM_DENSE) ? "" : " ";
   const char *commaspace = (mode == TGPM_DENSE) ? "," : ", ";
 
   switch (t->kind) {
     case TG_BOOLEAN:
-      fprintf(fp, "%s", *data ? "true" : "false");
-      break;
+      return tgprintf(s, "%s", *data ? "true" : "false");
 
     case TG_CHAR:
-      fprintf(fp, "'");
-      printchar(fp, (unsigned char) *data, '\'');
-      fprintf(fp, "'");
-      break;
+      tgprintf(s, "'");
+      printchar(s, (unsigned char) *data, '\'');
+      return tgprintf(s, "'");
 
     case TG_INT:
       switch (t->size) {
-        case 1: fprintf(fp, "%" PRId8, *(int8_t *)data); break;
-        case 2: fprintf(fp, "%" PRId16, *(int16_t *)data); break;
-        case 4: fprintf(fp, "%" PRId32, *(int32_t *)data); break;
-        case 8: fprintf(fp, "%" PRId64, *(int64_t *)data); break;
+        case 1: return tgprintf(s, "%" PRId8, *(int8_t *)data); break;
+        case 2: return tgprintf(s, "%" PRId16, *(int16_t *)data); break;
+        case 4: return tgprintf(s, "%" PRId32, *(int32_t *)data); break;
+        case 8: return tgprintf(s, "%" PRId64, *(int64_t *)data); break;
         default: assert(0);
       }
       break;
 
     case TG_UINT:
       switch (t->size) {
-        case 1: fprintf(fp, "%" PRIu8, *(uint8_t *)data); break;
-        case 2: fprintf(fp, "%" PRIu16, *(uint16_t *)data); break;
-        case 4: fprintf(fp, "%" PRIu32, *(uint32_t *)data); break;
-        case 8: fprintf(fp, "%" PRIu64, *(uint64_t *)data); break;
+        case 1: return tgprintf(s, "%" PRIu8, *(uint8_t *)data); break;
+        case 2: return tgprintf(s, "%" PRIu16, *(uint16_t *)data); break;
+        case 4: return tgprintf(s, "%" PRIu32, *(uint32_t *)data); break;
+        case 8: return tgprintf(s, "%" PRIu64, *(uint64_t *)data); break;
         default: assert(0);
       }
       break;
 
     case TG_FLOAT:
       switch (t->size) {
-        case 4: fprintf(fp, "%f", *(float *)data); break;
-        case 8: fprintf(fp, "%f", *(double *)data); break;
+        case 4: return tgprintf(s, "%f", *(float *)data); break;
+        case 8: return tgprintf(s, "%f", *(double *)data); break;
         default: assert(0);
       }
       break;
@@ -937,61 +984,56 @@ static void tgprint1(FILE *fp, const struct tgtype *t, const char *data, int ind
       unsigned i;
       for (i = 0; i < t->u.e.n; i++) {
         if (t->u.e.ms[i].v == val) {
-          fprintf(fp, "%s", t->u.e.ms[i].name);
-          break;
+          return tgprintf(s, "%s", t->u.e.ms[i].name);
         }
       }
-      if (i == t->u.e.n)
-        fprintf(fp, "(%d)", val);
-      break;
+      return tgprintf(s, "(%d)", val);
     }
 
     case TG_STRING: {
       const char *str = *((char **)data);
       if (str == NULL)
-        fprintf (fp, "(null)");
+        return tgprintf (s, "(null)");
       else {
-        fprintf(fp, "\"");
+        tgprintf(s, "\"");
         while (*str)
         {
           unsigned char v = (unsigned char) *str++;
-          printchar(fp, v, '"');
+          if (!printchar(s, v, '"'))
+            return 0;
         }
-        fprintf(fp, "\"");
+        return tgprintf(s, "\"");
       }
-      break;
     }
 
     case TG_TIME: {
       DDS_Time_t t = *(DDS_Time_t *)data;
       if (t.sec == DDS_TIMESTAMP_INVALID_SEC && t.nanosec == DDS_TIMESTAMP_INVALID_NSEC)
-        fprintf(fp, "invalid");
+        return tgprintf(s, "invalid");
       else if(t.sec == DDS_DURATION_INFINITE_SEC && t.nanosec == DDS_DURATION_INFINITE_NSEC)
-        fprintf(fp, "inf");
+        return tgprintf(s, "inf");
       else
-        fprintf(fp, "%d.%09u", t.sec, t.nanosec);
-      break;
+        return tgprintf(s, "%d.%09u", t.sec, t.nanosec);
     }
 
     case TG_TYPEDEF:
-      tgprint1(fp, t->u.td.type, data, indent, mode);
-      break;
+      return tgprint1(s, t->u.td.type, data, indent, mode);
 
     case TG_STRUCT: {
       const struct tgtype_S *ts = &t->u.S;
       unsigned i;
-      fprintf(fp, "{%s", mode == TGPM_MULTILINE ? "" : space);
-      for (i = 0; i < ts->n; i++) {
+      int c;
+      c = tgprintf(s, "{%s", mode == TGPM_MULTILINE ? "" : space);
+      for (i = 0; c && i < ts->n; i++) {
         if (mode == TGPM_MULTILINE)
-          fprintf(fp, "%s\n%*.*s", i == 0 ? "" : ",", indent+4, indent+4, "");
+          (void)tgprintf(s, "%s\n%*.*s", i == 0 ? "" : ",", indent+4, indent+4, "");
         else
-          fprintf(fp, "%s", i == 0 ? "" : commaspace);
+          (void)tgprintf(s, "%s", i == 0 ? "" : commaspace);
         if (mode >= TGPM_FIELDS)
-          fprintf(fp, ".%s%s=%s", ts->ms[i].name, space, space);
-        tgprint1(fp, ts->ms[i].type, data + ts->ms[i].off, indent+4, mode);
+          (void)tgprintf(s, ".%s%s=%s", ts->ms[i].name, space, space);
+        c = tgprint1(s, ts->ms[i].type, data + ts->ms[i].off, indent+4, mode);
       }
-      fprintf(fp, "%s}", ts->n > 0 ? space : "");
-      break;
+      return tgprintf(s, "%s}", ts->n > 0 ? space : "");
     }
 
     case TG_SEQUENCE: {
@@ -1000,7 +1042,7 @@ static void tgprint1(FILE *fp, const struct tgtype *t, const char *data, int ind
       const struct tgtype *st = t->u.seq.type;
       const size_t size1 = st->size;
       const char *sep;
-      int sepind;
+      int sepind, c;
       if (mode != TGPM_MULTILINE || !(st->kind == TG_SEQUENCE || st->kind == TG_ARRAY || st->kind == TG_STRUCT || st->kind == TG_UNION)) {
         sep = "";
         sepind = 0;
@@ -1008,45 +1050,44 @@ static void tgprint1(FILE *fp, const struct tgtype *t, const char *data, int ind
         sep = "\n";
         sepind = indent+4;
       }
-      fprintf(fp, "{%s", space);
+      c = tgprintf(s, "{%s", space);
       /* Special-case sequences/arrays of chars and octets */
       if (!(st->kind == TG_CHAR || (st->kind == TG_UINT && st->size == 1))) {
-        for (unsigned i = 0; i < seq->_length; i++) {
-          if (i != 0) fprintf(fp, ",%s%*.*s", sep, sepind, sepind, "");
-          tgprint1(fp, st, (char *)data1, indent+4, mode);
+        for (unsigned i = 0; c && i < seq->_length; i++) {
+          if (i != 0) tgprintf(s, ",%s%*.*s", sep, sepind, sepind, "");
+          c = tgprint1(s, st, (char *)data1, indent+4, mode);
           data1 += size1;
         }
       } else {
         unsigned i = 0;
-        while (i < seq->_length)
+        while (c && i < seq->_length)
         {
           unsigned m = isprint_runlen(data1, seq->_length - i);
           if (m >= 4) {
-            fprintf(fp, "%s\"", i == 0 ? "" : ",");
+            tgprintf(s, "%s\"", i == 0 ? "" : ",");
             for (unsigned j = 0; j < m; j++)
-              fprintf(fp, "%c", *data1++);
-            fprintf(fp, "\"");
+              tgprintf(s, "%c", *data1++);
+            c = tgprintf(s, "\"");
           } else {
             m = 1;
-            fprintf(fp, "%s%d", i == 0 ? "" : ",", *data1++);
+            c = tgprintf(s, "%s%d", i == 0 ? "" : ",", *data1++);
           }
           i += m;
         }
       }
-      fprintf(fp, "%s}", seq->_length > 0 ? space : "");
-      break;
+      return tgprintf(s, "%s}", seq->_length > 0 ? space : "");
     }
 
     case TG_ARRAY: {
       unsigned i;
-      fprintf(fp, "{%s", space);
-      for (i = 0; i < t->u.ary.n; i++) {
-        if (i != 0) fprintf(fp, ",");
-        tgprint1(fp, t->u.ary.type, data, indent+4, mode);
+      int c;
+      c = tgprintf(s, "{%s", space);
+      for (i = 0; c && i < t->u.ary.n; i++) {
+        if (i != 0) tgprintf(s, ",");
+        c = tgprint1(s, t->u.ary.type, data, indent+4, mode);
         data += t->u.ary.type->size;
       }
-      fprintf(fp, "%s}", space);
-      break;
+      return tgprintf(s, "%s}", space);
     }
 
     case TG_UNION: {
@@ -1054,47 +1095,66 @@ static void tgprint1(FILE *fp, const struct tgtype *t, const char *data, int ind
       uint64_t dv;
       unsigned i;
       int msidx;
-      tgprint1(fp, tu->dtype, data, indent+4, mode);
+      tgprint1(s, tu->dtype, data, indent+4, mode);
       dv = loaddisc(tu->dtype, data);
       for (i = 0; i < tu->nlab; i++)
         if (dv == tu->labs[i].val)
           break;
       msidx = (i < tu->nlab) ? tu->labs[i].msidx : tu->msidxdef;
       if (msidx == -1)
-        fprintf(fp, ":(invalid)");
+        return tgprintf(s, ":(invalid)");
       else {
-        fprintf(fp, ":");
+        tgprintf(s, ":");
         if (mode >= TGPM_FIELDS)
-          fprintf(fp, ".%s%s=%s", tu->ms[msidx].name, space, space);
-        tgprint1(fp, tu->ms[msidx].type, data + tu->off, indent + 4, mode);
+          tgprintf(s, ".%s%s=%s", tu->ms[msidx].name, space, space);
+        return tgprint1(s, tu->ms[msidx].type, data + tu->off, indent + 4, mode);
       }
-      break;
     }
   }
+  return 1;
 }
 
-void tgprint(FILE *fp, const struct tgtopic *tp, const void *data, enum tgprint_mode mode)
+int tgprint(struct tgstring *s, const struct tgtopic *tp, const void *data, enum tgprint_mode mode)
 {
-  tgprint1(fp, tp->type, data, 0, mode);
-}
-
-void tgprintkey(FILE *fp, const struct tgtopic *tp, const void *keydata, enum tgprint_mode mode)
-{
-  const char *space = (mode == TGPM_DENSE) ? "" : " ";
-  const char *commaspace = (mode == TGPM_DENSE) ? "," : ", ";
-  unsigned i;
-  fprintf(fp, "{%s", mode == TGPM_MULTILINE ? "" : space);
-  for (i = 0; i < tp->nkeys; i++)
+  if (s->chop == 0)
+    return 0;
+  else
   {
-    if (mode == TGPM_MULTILINE)
-      fprintf(fp, "%s\n%*.*s", i == 0 ? "" : ",", 4, 4, "");
-    else
-      fprintf(fp, "%s", i == 0 ? "" : commaspace);
-    if (mode >= TGPM_FIELDS)
-      fprintf(fp, ".%s%s=%s", tp->keys[i].name, space, space);
-    tgprint1(fp, tp->keys[i].type, (const char *) keydata + tp->keys[i].off, 0, mode);
+    s->chopped = 0;
+    s->pos = 0;
+    s->buf[0] = 0;
+    (void)tgprint1(s, tp->type, data, 0, mode);
+    return !s->chopped;
   }
-  fprintf(fp, "%s}", tp->nkeys > 0 ? space : "");
+}
+
+int tgprintkey(struct tgstring *s, const struct tgtopic *tp, const void *keydata, enum tgprint_mode mode)
+{
+  if (s->chop == 0)
+    return 0;
+  else
+  {
+    const char *space = (mode == TGPM_DENSE) ? "" : " ";
+    const char *commaspace = (mode == TGPM_DENSE) ? "," : ", ";
+    unsigned i;
+    int c;
+    s->chopped = 0;
+    s->pos = 0;
+    s->buf[0] = 0;
+    c = tgprintf(s, "{%s", mode == TGPM_MULTILINE ? "" : space);
+    for (i = 0; c && i < tp->nkeys; i++)
+    {
+      if (mode == TGPM_MULTILINE)
+        (void)tgprintf(s, "%s\n%*.*s", i == 0 ? "" : ",", 4, 4, "");
+      else
+        (void)tgprintf(s, "%s", i == 0 ? "" : commaspace);
+      if (mode >= TGPM_FIELDS)
+        (void)tgprintf(s, ".%s%s=%s", tp->keys[i].name, space, space);
+      c = tgprint1(s, tp->keys[i].type, (const char *) keydata + tp->keys[i].off, 0, mode);
+    }
+    (void)tgprintf(s, "%s}", tp->nkeys > 0 ? space : "");
+    return !s->chopped;
+  }
 }
 
 static void tgfreedata1(const struct tgtype *t, char *data)

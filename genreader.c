@@ -202,6 +202,7 @@ int main (int argc, char **argv)
       else
       {
         struct rdlist *rd;
+        struct tgstring str;
         for (rd = rds; rd; rd = rd->next)
           if (gl->_buffer[k] == rd->sc)
             break;
@@ -212,16 +213,18 @@ int main (int argc, char **argv)
         if (result != DDS_RETCODE_OK)
           error("take failed, error %s\n", dds_strerror(result));
 
+        tgstring_init (&str, 0xffffffff);
         for (i = 0; i < mseq._length; i++)
         {
           DDS_SampleInfo const * const si = &iseq._buffer[i];
           if (si->valid_data)
           {
             printf("%s: ", rd->tgtp->name);
-            tgprint(stdout, rd->tgtp, (char *)mseq._buffer + i * rd->tgtp->size, TGPM_FIELDS);
-            printf("\n");
+            tgprint(&str, rd->tgtp, (char *)mseq._buffer + i * rd->tgtp->size, TGPM_FIELDS);
+            printf("%s\n", str.buf);
           }
         }
+        tgstring_fini (&str);
 
         DDS_DataReader_return_loan(rd->rd, &mseq, &iseq);
       }

@@ -27,10 +27,21 @@ enum tgprint_mode {
   TGPM_MULTILINE
 };
 
+struct tgstring {
+  char *buf;
+  size_t pos;
+  size_t size;
+  size_t chop;
+  int chopped;
+};
+
+void tgstring_init(struct tgstring *s, size_t chop);
+void tgstring_fini(struct tgstring *s);
+
 struct tgtopic *tgnew(DDS_Topic tp, int printtype);
 void tgfree(struct tgtopic *tp);
-void tgprint(FILE *fp, const struct tgtopic *tp, const void *data, enum tgprint_mode mode);
-void tgprintkey(FILE *fp, const struct tgtopic *tp, const void *keydata, enum tgprint_mode mode);
+int tgprint(struct tgstring *s, const struct tgtopic *tp, const void *data, enum tgprint_mode mode);
+int tgprintkey(struct tgstring *s, const struct tgtopic *tp, const void *keydata, enum tgprint_mode mode);
 
 void *tgscan(const struct tgtopic *tp, const char *src, char **endp);
 void tgfreedata(const struct tgtopic *tp, void *data);
