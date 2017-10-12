@@ -81,8 +81,8 @@ Default reader and writer QoS are determined by applying (in this order) the DCP
 QoS setting                         | value
 ------------------------------------|-------------
 history kind                        | keep all
-resource limits                     | max_samples = 10000 (reader)
-                                    | max_samples = 100 (writer)
+resource limits                     | max\_samples = 10000 (reader)
+                                    | max\_samples = 100 (writer)
 auto-dispose unregistered instances | false
 
 The `-q` option allows the specification of overrides applied after setting the defaults. It takes an argument in either of three forms: _FS_:_QOS_ to set QoS directly from the command-line, `provider=`[_PROFILE_,]_URI_ to select a QoS provider, or anything accepted by the selected QoS provider, if any.
