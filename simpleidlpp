@@ -85,6 +85,8 @@ my @module_stack = ("u");
 # as keys.  Actually, it can't parse unions yet.
 my %types = ();
 for (keys %fixed_size_tab) { $types{$_} = $_; }
+$types{"u::c_ulong"} = "uint32";
+$types{"u::c_time"} = "uint64"; # hack
 
 # The topics are collected in the @topics array.  Each topic in is
 # represented as [ TYPE, KEYS ] (an array reference), where TYPE is the

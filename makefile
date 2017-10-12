@@ -81,7 +81,7 @@ endif
 # If $(SPLICE_TARGET) is set, assume we're building against a source tree
 ifneq "$(SPLICE_TARGET)" ""
   OSPL_INTERNAL_INC = api/dcps/gapi/include api/dcps/gapi/code user/include user/code abstraction/os-net/include abstraction/os-net/$(OS) abstraction/pa/include
-  OSPLINC = $(addprefix src/, api/dcps/sac/bld/$(SPLICE_TARGET) api/dcps/sac/include database/database/include kernel/include osplcore/bld/$(SPLICE_TARGET) kernel/bld/$(SPLICE_TARGET) abstraction/os/include abstraction/os/$(OS) $(OSPL_INTERNAL_INC))
+  OSPLINC = $(addprefix src/, api/dcps/sac/bld/$(SPLICE_TARGET) api/dcps/sac/include database/database/include database/serialization/include kernel/include osplcore/bld/$(SPLICE_TARGET) kernel/bld/$(SPLICE_TARGET) abstraction/os/include abstraction/os/$(OS) $(OSPL_INTERNAL_INC))
 else
   OSPLINC = include/dcps/C/SAC include/sys
 endif
@@ -123,10 +123,16 @@ endif
 
 # Target executables, each may have a bunch of IDL files ...
 TARGETS = pubsub$X lsbuiltin$X pingpong$X
+TARGETS += fanout$X manysamples$X manyendpoints$X txnid-test$X
+TARGETS += serdes$X
 IDL_common := testtype
 # ... and those really required per target ...
 IDL_pubsub := testtype ddsicontrol
 IDL_pingpong := testtype
+IDL_fanout := testtype
+IDL_manysamples := testtype
+IDL_manyendpoints := testtype
+IDL_txnid_test := testtype
 # ... and the set of all IDL files ($(sort) removes duplicates)
 IDLMODS := $(sort $(foreach x, common $(TARGETS), $(IDL_$(subst -,_,$x))))
 ifneq "$(OSPL_MAJOR)" "" # assume source tree in which case $OSPL_HOME/etc/idl may not have the req files 
@@ -169,6 +175,10 @@ ECHO_COMMAND=@
 all: $(TARGETS)
 
 pubsub$X: tglib.o common.o porting.o
+fanout$X: common.o porting.o
+manysamples$X: common.o porting.o
+manyendpoints$X: common.o porting.o
+txnid-test$X: common.o porting.o
 genreader$X: tglib.o common.o
 pingpong$X: common.o porting.o
 
