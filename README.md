@@ -241,7 +241,7 @@ _V_     |           | synonym for the `w` command
 `E`     |           | end coherent changes
 `W`     |           | wait_for_acknowledgements with timeout set to infinite
 `S`     | _P_;_T_;_U_ | make a persistent snapshot for partition expression _P_, topic expression _T_, and destination URI _U_
-`C`     | _T_;_F_;_D_ | write DDSI control topic (if feature enabled in config): _T_ = {`self`|`all`|_id_} systemId of target; _F_ = {`d`|`m`|`dm`} whether deaf, mute or deafmute; D = duration in seconds (floating or `inf`)
+`C`     | _T_;_F_;_D_ | write DDSI control topic (if feature enabled in config): _T_ = {`self`,`all`,_id_} systemId of target; _F_ = {`d`,`m`,`dm`} whether deaf, mute or deafmute; D = duration in seconds (floating or `inf`)
 `:`     | _N_       | select the non-auto writer number _N_ (0-based), if _N_ has a sign, move towards the right (+) or the left (-) _N_-th non-auto writer
 `:`     | _NAME_    | select the unique writer of which the topic name starts with _NAME_
 
