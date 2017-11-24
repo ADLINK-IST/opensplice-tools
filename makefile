@@ -123,8 +123,6 @@ endif
 
 # Target executables, each may have a bunch of IDL files ...
 TARGETS = pubsub$X lsbuiltin$X pingpong$X
-TARGETS += fanout$X manysamples$X manyendpoints$X txnid-test$X
-TARGETS += serdes$X
 IDL_common := testtype
 # ... and those really required per target ...
 IDL_pubsub := testtype ddsicontrol
