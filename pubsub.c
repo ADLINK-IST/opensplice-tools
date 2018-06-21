@@ -95,6 +95,8 @@ static double dur = 0.0;
 static int sigpipe[2];
 static int termpipe[2];
 static int fdin = 0;
+static int print_latency = 0;
+static FILE *latlog_fp = NULL;
 static enum tgprint_mode print_mode = TGPM_FIELDS;
 static unsigned print_metadata = PM_STATE;
 static unsigned print_chop = 0xffffffff;
@@ -316,6 +318,9 @@ OPTIONS:\n\
                     nwgen          no-writers generation count\n\
                     ranks          sample, generation, absolute generation ranks\n\
                     state          instance/sample/view states\n\
+                    latency[=F]    show latency information for -mc[p] mode\n\
+                                   =F: write raw 64-bit current & source\n\
+                                       timestamps to file F\n\
                   additionally, for ARB types the following have effect:\n\
                     type           print type definition at start up\n\
                     dense          no additional white space, no field names\n\
@@ -2177,6 +2182,7 @@ static void *subthread (void *vspec)
     long long out_of_seq = 0, nreceived = 0, last_nreceived = 0;
     long long nreceived_bytes = 0, last_nreceived_bytes = 0;
     struct eseq_admin eseq_admin;
+    struct hist *hist = hist_new (30, 10000, 0);
     init_eseq_admin(&eseq_admin, nkeyvals);
     mseq.any = DDS_sequence_octet__alloc();
     iseq = DDS_SampleInfoSeq__alloc ();
@@ -2200,7 +2206,6 @@ static void *subthread (void *vspec)
         break;
       }
 
-      tnow = nowll ();
       for (gi = 0; gi < (spec->polling ? 1 : glist->_length); gi++)
       {
         const DDS_Condition cond = spec->polling ? 0 : glist->_buffer[gi];
@@ -2267,6 +2272,8 @@ static void *subthread (void *vspec)
         if (need_access && (result = DDS_Subscriber_end_access (sub)) != DDS_RETCODE_OK)
           error ("DDS_Subscriber_end_access: %d (%s)\n", (int) result, dds_strerror (result));
 
+        tnow = nowll ();
+
         switch (spec->mode)
         {
           case MODE_PRINT:
@@ -2302,7 +2309,18 @@ static void *subthread (void *vspec)
                 case OU:   { OneULong *d = &mseq.ou->_buffer[i];   keyval = 0;         seq = d->seq; size = 4; } break;
                 case ARB:  assert(0); break; /* can't check what we don't know */
               }
-              if (!check_eseq (&eseq_admin, seq, (unsigned)keyval, iseq->_buffer[i].publication_handle))
+              if (check_eseq (&eseq_admin, seq, (unsigned)keyval, iseq->_buffer[i].publication_handle))
+              {
+                unsigned long long tsrc = (DDS_unsigned_long)iseq->_buffer[i].source_timestamp.sec * 1000000000ull + iseq->_buffer[i].source_timestamp.nanosec;
+                unsigned long long tdelta = tnow - tsrc;
+                hist_record (hist, tdelta, 1);
+                if (latlog_fp)
+                {
+                  fwrite(&tnow, sizeof(tnow), 1, latlog_fp);
+                  fwrite(&tsrc, sizeof(tsrc), 1, latlog_fp);
+                }
+              }
+              else
               {
                 out_of_seq++;
                 if (spec->exit_on_out_of_seq)
@@ -2335,8 +2353,14 @@ static void *subthread (void *vspec)
                 const unsigned tdelta_ms = ((tdelta_ns % 1000000000) + 500000) / 1000000;
                 const long long ndelta = nreceived - last_nreceived;
                 const double rate_Mbps = (nreceived_bytes - last_nreceived_bytes) * 8 / 1e6;
-                printf ("%llu.%03u ntot %lld nseq %lld ndelta %lld rate %.2f Mb/s\n",
+                flockfile(stdout);
+                printf ("%llu.%03u ntot %lld nseq %lld ndelta %lld rate %.2f Mb/s",
                         tdelta_s, tdelta_ms, nreceived, out_of_seq, ndelta, rate_Mbps);
+                if (print_latency)
+                  hist_print (hist, tnow - tprint, 1);
+                else
+                  printf ("\n");
+                funlockfile(stdout);
                 last_nreceived = nreceived;
                 last_nreceived_bytes = nreceived_bytes;
                 tprint = tnow;
@@ -2404,6 +2428,7 @@ static void *subthread (void *vspec)
     if (spec->mode == MODE_CHECK)
       printf ("received: %lld, out of seq: %lld\n", nreceived, out_of_seq);
     fini_eseq_admin (&eseq_admin);
+    hist_free (hist);
   }
 
   switch (spec->mode)
@@ -2638,6 +2663,13 @@ static void set_print_mode (const char *optarg)
       printtype = enable;
     else if (strcmp(tok, "finaltake") == 0)
       print_final_take_notice = enable;
+    else if (strcmp(tok, "latency") == 0)
+      print_latency = enable;
+    else if (strncmp(tok, "latency=", 8) == 0 && enable)
+    {
+      print_latency = enable;
+      latlog_fp = fopen("latlog.bin","wb");
+    }
     else if (strcmp(tok, "dense") == 0)
       print_mode = TGPM_DENSE;
     else if (strcmp(tok, "space") == 0)
@@ -3407,6 +3439,9 @@ int main (int argc, char *argv[])
       free(m);
     }
   }
+
+  if (latlog_fp)
+    fclose(latlog_fp);
 
   for (i = 0; i <= specidx; i++)
   {
