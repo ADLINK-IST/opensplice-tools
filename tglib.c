@@ -1241,6 +1241,7 @@ static void freetoken(struct token *tok)
 {
   if (tok->kind == TOK_SYMBOL || tok->kind == TOK_STRING)
     free(tok->val.str);
+  tok->kind = TOK_ERROR;
 }
 
 static void init_lexer(struct token *tok, struct lexer *l, const char *src)
