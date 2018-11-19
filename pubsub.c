@@ -2365,8 +2365,10 @@ static void *subthread (void *vspec)
               if (tnow - tprint >= 1000000000ll || termflag)
               {
                 const unsigned long long tdelta_ns = tnow - tfirst;
-                const unsigned long long tdelta_s = tdelta_ns / 1000000000;
-                const unsigned tdelta_ms = ((tdelta_ns % 1000000000) + 500000) / 1000000;
+                const unsigned long long tdelta_s0 = tdelta_ns / 1000000000;
+                const unsigned tdelta_ms0 = ((tdelta_ns % 1000000000) + 500000) / 1000000;
+                const unsigned long long tdelta_s = tdelta_s0 + (tdelta_ms0 == 1000);
+                const unsigned tdelta_ms = tdelta_ms0 % 1000;
                 const long long ndelta = nreceived - last_nreceived;
                 const double rate_Mbps = (nreceived_bytes - last_nreceived_bytes) * 8 / 1e6;
                 flockfile(stdout);
