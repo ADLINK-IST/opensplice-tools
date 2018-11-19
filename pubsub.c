@@ -2757,6 +2757,7 @@ int main (int argc, char *argv[])
   int want_writer = 1;
   int disable_signal_handlers = 0;
   unsigned sleep_at_end = 0;
+  unsigned sleep_at_beginning = 0;
   pthread_t sigtid;
   pthread_t inptid;
 #define SPEC_TOPICSEL 1
@@ -2809,12 +2810,15 @@ int main (int argc, char *argv[])
   spec_sofar = 0;
   assert(specidx == 0);
 
-  while ((opt = getopt (argc, argv, "$!@*:FK:T:D:q:m:M:n:OP:rRs:S:U:W:w:z:")) != EOF)
+  while ((opt = getopt (argc, argv, "^:$!@*:FK:T:D:q:m:M:n:OP:rRs:S:U:W:w:z:")) != EOF)
   {
     switch (opt)
     {
       case '!':
         disable_signal_handlers = 1;
+        break;
+      case '^':
+        sleep_at_beginning = (unsigned) atoi (optarg);
         break;
       case '@':
         spec[specidx].wr.duplicate_writer_flag = 1;
@@ -3182,6 +3186,9 @@ int main (int argc, char *argv[])
 
   common_init (argv[0]);
   set_systemid_env ();
+
+  if (sleep_at_beginning)
+    sleep (sleep_at_beginning);
 
   {
     char *ps[argc - optind];
