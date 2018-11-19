@@ -375,6 +375,9 @@ OPTIONS:\n\
 Note: defaults above are overridden as follows:\n\
   r:k=all,R=10000/inf/inf\n\
   w:k=all,R=100/inf/inf\n\
+when group coherency is enabled, resource limits are forced to inf/inf/inf because of a restriction\n\
+on the use of resource limits on the reader in combination with group coherency in some versions of\n\
+OpenSplice.\n\
 \n\
 Input format is a white-space separated sequence (K* and OU, newline\n\
 separated for ARB) of:\n\
