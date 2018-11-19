@@ -1177,26 +1177,39 @@ static int print_sampleinfo (unsigned long long *tstart, unsigned long long tnow
   if (print_metadata & PM_TIME)
     n += printf ("%s%u.%09u", n > 0 ? " " : "", (unsigned) (relt / 1000000000), (unsigned) (relt % 1000000000));
   sep = " : ";
-  if (print_metadata & PM_PHANDLE)
-    n += printf ("%s%" PRIx32 ":%" PRIx32, n > 0 ? sep : "", phSystemId, phLocalId), sep = " ";
-  if (print_metadata & PM_IHANDLE)
+  if (print_metadata & PM_PHANDLE) {
+    n += printf ("%s%" PRIx32 ":%" PRIx32, n > 0 ? sep : "", phSystemId, phLocalId); sep = " ";
+  }
+  if (print_metadata & PM_IHANDLE) {
     n += printf ("%s%" PRIx32 ":%" PRIx32, n > 0 ? sep : "", ihSystemId, ihLocalId);
+  }
   sep = " : ";
-  if (print_metadata & PM_STIME)
-    n += printf ("%s%u.%09u", n > 0 ? sep : "", si->source_timestamp.sec, si->source_timestamp.nanosec), sep = " ";
-  if (print_metadata & PM_RTIME)
+  if (print_metadata & PM_STIME) {
+    n += printf ("%s%u.%09u", n > 0 ? sep : "", si->source_timestamp.sec, si->source_timestamp.nanosec);
+    sep = " ";
+  }
+  if (print_metadata & PM_RTIME) {
     n += printf ("%s%u.%09u", n > 0 ? sep : "", si->reception_timestamp.sec, si->reception_timestamp.nanosec);
+  }
   sep = " : ";
-  if (print_metadata & PM_DGEN)
-    n += printf ("%s%d", n > 0 ? sep : "", si->disposed_generation_count), sep = " ";
-  if (print_metadata & PM_NWGEN)
-    n += printf ("%s%d", n > 0 ? sep : "", si->no_writers_generation_count), sep = " ";
+  if (print_metadata & PM_DGEN) {
+    n += printf ("%s%d", n > 0 ? sep : "", si->disposed_generation_count);
+    sep = " ";
+  }
+  if (print_metadata & PM_NWGEN) {
+    n += printf ("%s%d", n > 0 ? sep : "", si->no_writers_generation_count);
+    sep = " ";
+  }
   sep = " : ";
-  if (print_metadata & PM_RANKS)
-    n += printf ("%s%d %d %d", n > 0 ? sep : "", si->sample_rank, si->generation_rank, si->absolute_generation_rank), sep = " ";
+  if (print_metadata & PM_RANKS) {
+    n += printf ("%s%d %d %d", n > 0 ? sep : "", si->sample_rank, si->generation_rank, si->absolute_generation_rank);
+    sep = " ";
+  }
   sep = " : ";
-  if (print_metadata & PM_STATE)
-    n += printf ("%s%c%c%c", n > 0 ? sep : "", isc, ssc, vsc), sep = " ";
+  if (print_metadata & PM_STATE) {
+    n += printf ("%s%c%c%c", n > 0 ? sep : "", isc, ssc, vsc);
+    sep = " ";
+  }
   return (n > 0);
 }
 
@@ -1260,7 +1273,7 @@ static void print_seq_K128 (unsigned long long *tstart, unsigned long long tnow,
     print_K (tstart, tnow, rd, tag, &iseq->_buffer[i], mseq->_buffer[i].keyval, mseq->_buffer[i].seq, getkeyval_K128);
 }
 
-static void print_seq_K256 (unsigned long long *tstart, unsigned long long tnow, Keyed128DataReader rd, const char *tag, const DDS_SampleInfoSeq *iseq, DDS_sequence_Keyed256 *mseq)
+static void print_seq_K256 (unsigned long long *tstart, unsigned long long tnow, Keyed256DataReader rd, const char *tag, const DDS_SampleInfoSeq *iseq, DDS_sequence_Keyed256 *mseq)
 {
   unsigned i;
   for (i = 0; i < mseq->_length; i++)
@@ -2004,9 +2017,9 @@ static void *pubthread(void *vwrspecs)
         char *tmp = nextspec + strlen(nextspec);
         while (tmp > nextspec && isspace((unsigned char)tmp[-1]))
           *--tmp = 0;
-        if ((sscanf (nextspec, "+%d%n", &cnt, &pos) == 1 && nextspec[pos] == 0) || (cnt = 1, strcmp(nextspec, "+") == 0)) {
+        if ((sscanf (nextspec, "+%d%n", &cnt, &pos) == 1 && nextspec[pos] == 0) || ((void)(cnt = 1), strcmp(nextspec, "+") == 0)) {
           while (cnt--) cursor = cursor->next;
-        } else if ((sscanf (nextspec, "-%d%n", &cnt, &pos) == 1 && nextspec[pos] == 0) || (cnt = 1, strcmp(nextspec, "+") == 0)) {
+        } else if ((sscanf (nextspec, "-%d%n", &cnt, &pos) == 1 && nextspec[pos] == 0) || ((void)(cnt = 1), strcmp(nextspec, "+") == 0)) {
           while (cnt--) cursor = cursor->prev;
         } else if (sscanf (nextspec, "%d%n", &cnt, &pos) == 1 && nextspec[pos] == 0) {
           cursor = wrspecs; while (cnt--) cursor = cursor->next;
@@ -2658,10 +2671,11 @@ static void set_print_mode (const char *optarg)
   while ((tok = strsep(&cursor, ",")) != NULL) {
     int pos;
     int enable;
-    if (strncmp(tok, "no", 2) == 0)
-      enable = 0, tok += 2;
-    else
+    if (strncmp(tok, "no", 2) == 0) {
+      enable = 0; tok += 2;
+    } else {
       enable = 1;
+    }
     if (strcmp(tok, "type") == 0)
       printtype = enable;
     else if (strcmp(tok, "finaltake") == 0)
@@ -2758,10 +2772,11 @@ int main (int argc, char *argv[])
   memset (&sigtid, 0, sizeof(sigtid));
   memset (&inptid, 0, sizeof(inptid));
 
-  if (strcmp(execname(argc, argv), "sub") == 0)
-    want_writer = 0, fdin = -1;
-  else if(strcmp(execname(argc, argv), "pub") == 0)
+  if (strcmp(execname(argc, argv), "sub") == 0) {
+    want_writer = 0; fdin = -1;
+  } else if(strcmp(execname(argc, argv), "pub") == 0) {
     want_reader = 0;
+  }
 
   save_argv0 (argv[0]);
   pid = (int) getpid ();
@@ -2907,33 +2922,33 @@ int main (int argc, char *argv[])
       case 'm':
         spec[specidx].rd.polling = 0;
         if (strcmp (optarg, "0") == 0)
-          spec[specidx].rd.mode = MODE_NONE;
+        { spec[specidx].rd.mode = MODE_NONE; }
         else if (strcmp (optarg, "p") == 0)
-          spec[specidx].rd.mode = MODE_PRINT;
+        { spec[specidx].rd.mode = MODE_PRINT; }
         else if (strcmp (optarg, "pp") == 0)
-          spec[specidx].rd.mode = MODE_PRINT, spec[specidx].rd.polling = 1;
+        { spec[specidx].rd.mode = MODE_PRINT; spec[specidx].rd.polling = 1; }
         else if (strcmp (optarg, "c") == 0)
-          spec[specidx].rd.mode = MODE_CHECK;
+        { spec[specidx].rd.mode = MODE_CHECK; }
         else if (sscanf (optarg, "c:%d%n", &nkeyvals, &pos) == 1 && optarg[pos] == 0)
-          spec[specidx].rd.mode = MODE_CHECK;
+        { spec[specidx].rd.mode = MODE_CHECK; }
         else if (strcmp (optarg, "cp") == 0)
-          spec[specidx].rd.mode = MODE_CHECK, spec[specidx].rd.polling = 1;
+        { spec[specidx].rd.mode = MODE_CHECK; spec[specidx].rd.polling = 1; }
         else if (sscanf (optarg, "cp:%d%n", &nkeyvals, &pos) == 1 && optarg[pos] == 0)
-          spec[specidx].rd.mode = MODE_CHECK, spec[specidx].rd.polling = 1;
+        { spec[specidx].rd.mode = MODE_CHECK; spec[specidx].rd.polling = 1; }
         else if (strcmp (optarg, "x") == 0)
-          spec[specidx].rd.mode = MODE_CHECK, spec[specidx].rd.exit_on_out_of_seq = 1;
+        { spec[specidx].rd.mode = MODE_CHECK; spec[specidx].rd.exit_on_out_of_seq = 1; }
         else if (sscanf (optarg, "x:%d%n", &nkeyvals, &pos) == 1 && optarg[pos] == 0)
-          spec[specidx].rd.mode = MODE_CHECK, spec[specidx].rd.exit_on_out_of_seq = 1;
+        { spec[specidx].rd.mode = MODE_CHECK; spec[specidx].rd.exit_on_out_of_seq = 1; }
         else if (strcmp (optarg, "xp") == 0)
-          spec[specidx].rd.mode = MODE_CHECK, spec[specidx].rd.polling = 1, spec[specidx].rd.exit_on_out_of_seq = 1;
+        { spec[specidx].rd.mode = MODE_CHECK; spec[specidx].rd.polling = 1; spec[specidx].rd.exit_on_out_of_seq = 1; }
         else if (sscanf (optarg, "xp:%d%n", &nkeyvals, &pos) == 1 && optarg[pos] == 0)
-          spec[specidx].rd.mode = MODE_CHECK, spec[specidx].rd.polling = 1, spec[specidx].rd.exit_on_out_of_seq = 1;
+        { spec[specidx].rd.mode = MODE_CHECK; spec[specidx].rd.polling = 1; spec[specidx].rd.exit_on_out_of_seq = 1; }
         else if (strcmp (optarg, "z") == 0)
-          spec[specidx].rd.mode = MODE_ZEROLOAD;
+        { spec[specidx].rd.mode = MODE_ZEROLOAD; }
         else if (strcmp (optarg, "d") == 0)
-          spec[specidx].rd.mode = MODE_DUMP;
+        { spec[specidx].rd.mode = MODE_DUMP; }
         else if (strcmp (optarg, "dp") == 0)
-          spec[specidx].rd.mode = MODE_DUMP, spec[specidx].rd.polling = 1;
+        { spec[specidx].rd.mode = MODE_DUMP; spec[specidx].rd.polling = 1; }
         else
         {
           fprintf (stderr, "-m %s: invalid mode\n", optarg);
