@@ -1,3 +1,5 @@
+.NOTPARALLEL:
+
 ifeq "$(filter second-expansion, $(.FEATURES))" ""
   $(error Secondary expansion required, which is available in gnu make 3.81 and later)
 endif
@@ -150,7 +152,7 @@ endif
 
 IDLPP := $(shell which idlpp$X)
 
-ECHO_COMMAND=@
+ECHO_PREFIX=@
 
 .PHONY: all clean zz dd
 .SECONDARY:
@@ -160,15 +162,15 @@ ECHO_COMMAND=@
 %: %.c
 
 %.h %Dcps.h %SacDcps.c %SacDcps.h %SplDcps.c %SplDcps.h: %.idl $(IDLPP)
-	$(ECHO_COMMAND)$(IDLPP) -S -lc $(IDLPPFLAGS) $<
+	$(ECHO_PREFIX)$(IDLPP) -S -lc $(IDLPPFLAGS) $<
 
 %.o: %.c
-	$(ECHO_COMMAND)$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ -c $<
+	$(ECHO_PREFIX)$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ -c $<
 
 
 %$X: %.o $$(foreach x, SacDcps.o SplDcps.o, \
 		$$(sort $$(addsuffix $$x, $$(IDL_$$@) $$(if $$(filter common.o, $$^), $(IDL_common)))))
-	$(ECHO_COMMAND)$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+	$(ECHO_PREFIX)$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 all: $(TARGETS)
 
@@ -186,7 +188,7 @@ pingpong$X: common.o porting.o
 # name-sans-sufffix is one of the targets, but for such simple
 # programs as these, that works just fine.
 %.d: %.c $(addsuffix .h, $(IDLMODS)) $(addsuffix SacDcps.h, $(IDLMODS)) $(addsuffix SplDcps.h, $(IDLMODS))
-	$(ECHO_COMMAND)$(CC) $(DEPFLAG) $(CPPFLAGS) $< | sed 's/^ *\($*\.o\) *:/\1 $@:/' > $@ || rm -f $@ ; exit 1
+	$(ECHO_PREFIX)$(CC) $(DEPFLAG) $(CPPFLAGS) $< | sed 's/^ *\($*\.o\) *:/\1 $@:/' > $@ || rm -f $@ ; exit 1
 
 clean:
 	rm -f *.[od] $(TARGETS) $(foreach x, $(IDLMODS), $(x).h $(x)Dcps.h $(x)SacDcps.[ch] $(x)SplDcps.[ch])
