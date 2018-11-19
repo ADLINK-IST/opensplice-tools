@@ -638,9 +638,17 @@ DDS_Subscriber new_subscriber1 (const struct qos *a, const char *partition)
 
 DDS_DataWriter new_datawriter_listener (const struct qos *a, const struct DDS_DataWriterListener *l, DDS_StatusMask mask)
 {
+  DDS_PublisherQos *pqos;
   DDS_DataWriter wr;
   if (a->qt != QT_WRITER)
     error ("new_datawriter called with non-writer qos\n");
+  pqos = DDS_PublisherQos__alloc ();
+  DDS_Publisher_get_qos (a->u.wr.p, pqos);
+  if (pqos->presentation.access_scope == DDS_GROUP_PRESENTATION_QOS && pqos->presentation.coherent_access)
+    a->u.wr.q->resource_limits.max_samples =
+      a->u.wr.q->resource_limits.max_instances =
+      a->u.wr.q->resource_limits.max_samples_per_instance = DDS_LENGTH_UNLIMITED;
+  DDS_free (pqos);
   if ((wr = DDS_Publisher_create_datawriter (a->u.wr.p, a->u.wr.t, a->u.wr.q, l, mask)) == NULL)
     error ("DDS_Publisher_create_datawriter\n");
   return wr;
@@ -653,9 +661,17 @@ DDS_DataWriter new_datawriter (const struct qos *a)
 
 DDS_DataReader new_datareader_listener (const struct qos *a, const struct DDS_DataReaderListener *l, DDS_StatusMask mask)
 {
+  DDS_SubscriberQos *sqos;
   DDS_DataReader rd;
   if (a->qt != QT_READER)
     error ("new_datareader called with non-reader qos\n");
+  sqos = DDS_SubscriberQos__alloc ();
+  DDS_Subscriber_get_qos (a->u.rd.s, sqos);
+  if (sqos->presentation.access_scope == DDS_GROUP_PRESENTATION_QOS && sqos->presentation.coherent_access)
+    a->u.rd.q->resource_limits.max_samples =
+      a->u.rd.q->resource_limits.max_instances =
+      a->u.rd.q->resource_limits.max_samples_per_instance = DDS_LENGTH_UNLIMITED;
+  DDS_free (sqos);
   if ((rd = DDS_Subscriber_create_datareader (a->u.rd.s, a->u.rd.t, a->u.rd.q, l, mask)) == NULL)
     error ("DDS_Subscriber_create_datareader\n");
   return rd;

@@ -1,7 +1,13 @@
 #!/bin/bash
 
+dds_types_option="-odds-types"
+if [ $1 = "-r" ] ; then
+    dds_types_option=""
+    shift
+fi
+
 if [ $# -ne 2 ] ; then
-    echo "usage: $0 IDL TYPE" 2>&1
+    echo "usage: $0 [-r] IDL TYPE" 2>&1
     exit 1
 fi
 idl="$1"
@@ -10,4 +16,4 @@ type="$2"
 simpleidlpp="`dirname $0`/simpleidlpp"
 echo "$type"
 $simpleidlpp "$type" "$OSPL_HOME/etc/idl/dds_dcps_builtintopics.idl" "$idl" | sed -e 's/ /,/g' || exit 1
-idlpp -I$OSPL_HOME/etc/idl -lc -S -odds-types -mTYPEINFO="$type" "$idl" | grep -v 'Warning: Option .* is deprecated since'
+idlpp -I$OSPL_HOME/etc/idl -lc -S ${dds_types_option} -mTYPEINFO="$type" "$idl" | grep -v 'Warning: Option .* is deprecated since'

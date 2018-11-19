@@ -231,14 +231,16 @@ sub parse_struct {
   ($tok, $name) = next_token ("IDENT");
   # assign it a temporary type, so members can refer to it
   $types{fqname ($name)} = "<incomplete>";
-  ($tok, $val) = next_token ("{");
-  my @members = ();
-  while (peek_token () ne "}") {
-    push @members, parse_member ();
-    next_token (";");
+  if (peek_token () ne ";") {
+    ($tok, $val) = next_token ("{");
+    my @members = ();
+    while (peek_token () ne "}") {
+      push @members, parse_member ();
+      next_token (";");
+    }
+    next_token ("}");
+    $types{fqname($name)} = \@members;
   }
-  next_token ("}");
-  $types{fqname($name)} = \@members;
   return fqname ($name);
 }
 
@@ -285,26 +287,28 @@ sub parse_union { # we can parse them (probably including some illegal ones)
   ($tok, $name) = next_token ("IDENT");
   #print STDERR "parse_union: name = $name\n";
   $types{fqname ($name)} = "union";
-  next_token ("switch");
-  next_token ("(");
-  my $disctype = parse_type ();
-  #print STDERR "  disc.type = $disctype\n";
-  next_token (")");
-  next_token ("{");
-  while (($tok = peek_token ()) ne "}") {
-    if ($tok eq "case") {
-      next_token ("case");
-      parse_int_or_constname ();
-      next_token (":");
-    } elsif ($tok eq "default") {
-      next_token ("default");
-      next_token (":");
-    } else {
-      parse_member ();
-      next_token (";");
+  if (peek_token () ne ";") {
+    next_token ("switch");
+    next_token ("(");
+    my $disctype = parse_type ();
+    #print STDERR "  disc.type = $disctype\n";
+    next_token (")");
+    next_token ("{");
+    while (($tok = peek_token ()) ne "}") {
+      if ($tok eq "case") {
+        next_token ("case");
+        parse_int_or_constname ();
+        next_token (":");
+      } elsif ($tok eq "default") {
+        next_token ("default");
+        next_token (":");
+      } else {
+        parse_member ();
+        next_token (";");
+      }
     }
+    next_token ("}");
   }
-  next_token ("}");
   return fqname ($name);
 }
 

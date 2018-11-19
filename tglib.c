@@ -1791,24 +1791,34 @@ static int tgscan1(char *dst, const struct tgtype *t, struct lexer *l)
         dstseq->_buffer = (void *) dst;
         maxn = (unsigned) t->u.ary.n;
       }
-      if (tk != TOK_LBRACE)
-        return scanerror(&tok, l, "'{' expected");
-      while ((tk = scantoken(&tok, l)) != TOK_ERROR && tk != TOK_RBRACE) {
-        if (tk == TOK_EOF)
-          return scanerror(&tok, l, "unexpected end of input");
-        if (dstseq->_length == 0)
-          pushbacktoken(&tok, l);
-        else if (tk != TOK_COMMA)
-          return scanerror(&tok, l, "',' expected");
-        if (maxn && dstseq->_length == maxn)
+      if (tk == TOK_LBRACE) {
+        while ((tk = scantoken(&tok, l)) != TOK_ERROR && tk != TOK_RBRACE) {
+          if (tk == TOK_EOF)
+            return scanerror(&tok, l, "unexpected end of input");
+          if (dstseq->_length == 0)
+            pushbacktoken(&tok, l);
+          else if (tk != TOK_COMMA)
+            return scanerror(&tok, l, "',' expected");
+          if (maxn && dstseq->_length == maxn)
+            return scanerror(&tok, l, "too many elements");
+          if (t->kind == TG_SEQUENCE)
+            dstseq->_buffer = realloc(dstseq->_buffer, (dstseq->_length+1) * size1);
+          if (!tgscan1((char *)dstseq->_buffer + dstseq->_length * size1, st, l))
+            return scanerror(&tok, l, "(unwinding)");
+          dstseq->_length++;
+        }
+        dstseq->_maximum = dstseq->_length;
+      } else if (tk == TOK_STRING && (st->kind == TG_CHAR || ((st->kind == TG_INT || st->kind == TG_UINT) && st->size == 1))) {
+        size_t len = strlen (tok.val.str);
+        if (len > maxn && !(t->kind == TG_SEQUENCE && maxn == 0))
           return scanerror(&tok, l, "too many elements");
         if (t->kind == TG_SEQUENCE)
-          dstseq->_buffer = realloc(dstseq->_buffer, (dstseq->_length+1) * size1);
-        if (!tgscan1((char *)dstseq->_buffer + dstseq->_length * size1, st, l))
-          return scanerror(&tok, l, "(unwinding)");
-        dstseq->_length++;
+          dstseq->_buffer = realloc(dstseq->_buffer, len);
+        memcpy (dstseq->_buffer, tok.val.str, len);
+        dstseq->_length = dstseq->_maximum = (unsigned)len;
+      } else {
+        return scanerror(&tok, l, "'{' expected");
       }
-      dstseq->_maximum = dstseq->_length;
       break;
     }
 
