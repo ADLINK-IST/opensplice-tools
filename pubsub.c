@@ -413,6 +413,7 @@ CT;F;D  write DDSI control topic (if feature enabled in config)\n\
                  N defaults to 1\n\
         N        Nth writer of all non-automatic writers\n\
         NAME     unique writer of which topic name starts with NAME\n\
+Q     quit - clean termination, same as EOF, SIGTERM or SIGINT\n\
 )     (a closing parenthesis) kill pubsub itself with signal SIGKILL\n\
 Note: for K*, OU types, in the above N is always a decimal\n\
 integer (possibly negative); because the OneULong type has no key\n\
@@ -931,7 +932,7 @@ static int read_value (int fd, char *command, int *key, struct tstamp_t *tstamp,
         ungetc (c, stdin);
         return 1;
       }
-      case 'Y': case 'B': case 'E': case 'W': case ')':
+      case 'Y': case 'B': case 'E': case 'W': case ')': case 'Q':
         *command = (char) c;
         return 1;
       default:
@@ -1571,6 +1572,9 @@ static void non_data_operation(char command, DDS_DataWriter wr)
         error ("DDS_Publisher_wait_for_acknowledgements: error %d\n", (int) result);
       break;
     }
+    case 'Q':
+      terminate();
+      break;
     case ')':
       kill (getpid (), SIGKILL);
       break;
@@ -1845,7 +1849,7 @@ static char *pub_do_nonarb(const struct writerspec *spec, int fdin, uint32_t *se
         else
           usleep ((unsigned) k);
         break;
-      case 'Y': case 'B': case 'E': case 'W': case ')':
+      case 'Y': case 'B': case 'E': case 'W': case ')': case 'Q':
         non_data_operation(command, spec->wr);
         break;
       case 'C':
@@ -1952,7 +1956,7 @@ static char *pub_do_arb_line(const struct writerspec *spec, const char *line)
           line += 1 + pos;
         }
         break;
-      case 'Y': case 'B': case 'E': case 'W': case ')':
+      case 'Y': case 'B': case 'E': case 'W': case ')': case 'Q':
         non_data_operation(*line++, spec->wr);
         break;
       case 'C':
