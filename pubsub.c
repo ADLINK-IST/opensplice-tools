@@ -374,7 +374,8 @@ OPTIONS:\n\
   -z N            topic size (affects KeyedSeq only)\n\
   -F              set line-buffered mode\n\
   -@              echo everything on duplicate writer (only for interactive)\n\
-  -* N            sleep for N seconds just before returning from main()\n\
+  -* [M:]N        sleep for M seconds just before deleteing participant and\n\
+                  N seconds just before returning from main()\n\
   -!              disable signal handlers\n\
 \n\
 %s\n\
@@ -2778,7 +2779,8 @@ int main (int argc, char *argv[])
   int want_reader = 1;
   int want_writer = 1;
   int disable_signal_handlers = 0;
-  unsigned sleep_at_end = 0;
+  unsigned sleep_at_end_1 = 0;
+  unsigned sleep_at_end_2 = 0;
   unsigned sleep_at_beginning = 0;
   pthread_t sigtid;
   pthread_t inptid;
@@ -2850,7 +2852,15 @@ int main (int argc, char *argv[])
         spec[specidx].wr.duplicate_writer_flag = 1;
         break;
       case '*':
-        sleep_at_end = (unsigned) atoi (optarg);
+        if (sscanf (optarg, "%u:%u%n", &sleep_at_end_1, &sleep_at_end_2, &pos) == 2 && optarg[pos] == 0)
+          ;
+        else if (sscanf (optarg, "%u%n", &sleep_at_end_2, &pos) == 1 && optarg[pos] == 0)
+          sleep_at_end_1 = 0;
+        else
+        {
+          fprintf (stderr, "-* %s: invalid sleep-at-end-setting\n", optarg);
+          exit (3);
+        }
         break;
       case 'M':
         if (sscanf(optarg, "%lf:%n", &wait_for_matching_reader_timeout, &pos) != 1)
@@ -3532,8 +3542,10 @@ int main (int argc, char *argv[])
       DDS_free(spec[i].wr.tpname);
   }
   DDS_free(termcond);
+  if (sleep_at_end_1)
+    sleep (sleep_at_end_1);
   common_fini ();
-  if (sleep_at_end)
-    sleep (sleep_at_end);
+  if (sleep_at_end_2)
+    sleep (sleep_at_end_2);
   return (int) exitcode;
 }
