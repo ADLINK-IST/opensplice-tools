@@ -49,6 +49,9 @@ void save_argv0 (const char *argv0);
 const char *dds_strerror (DDS_ReturnCode_t code);
 void error (const char *fmt, ...);
 int common_init (const char *argv0);
+#if ! PRE_V6_5
+int common_init_domainid (const char *argv0, DDS_DomainId_t domainid);
+#endif
 void common_fini (void);
 DDS_ReturnCode_t set_PartitionQosPolicy (DDS_PartitionQosPolicy *qp, unsigned npartitions, const char *partitions[]);
 DDS_ReturnCode_t change_publisher_partitions (DDS_Publisher pub, unsigned npartitions, const char *partitions[]);

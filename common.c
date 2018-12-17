@@ -334,24 +334,41 @@ void save_argv0 (const char *argv0)
   saved_argv0 = argv0;
 }
 
-int common_init (const char *argv0)
+static void register_default_types (void)
 {
-  save_argv0 (argv0);
-
-  if ((dpf = DDS_DomainParticipantFactory_get_instance ()) == NULL)
-    error ("DDS_DomainParticipantFactory_get_instance\n");
-  dp = DDS_DomainParticipantFactory_create_participant (dpf, DDS_DOMAIN_ID_DEFAULT, DDS_PARTICIPANT_QOS_DEFAULT, NULL, DDS_STATUS_MASK_NONE);
-  if (dp == DDS_HANDLE_NIL)
-    error ("DDS_DomainParticipantFactory_create_participant\n");
-
   ts_KeyedSeq = register_type ("KeyedSeq");
   ts_Keyed32 = register_type ("Keyed32");
   ts_Keyed64 = register_type ("Keyed64");
   ts_Keyed128 = register_type ("Keyed128");
   ts_Keyed256 = register_type ("Keyed256");
   ts_OneULong = register_type ("OneULong");
+}
+
+int common_init (const char *argv0)
+{
+  save_argv0 (argv0);
+  if ((dpf = DDS_DomainParticipantFactory_get_instance ()) == NULL)
+    error ("DDS_DomainParticipantFactory_get_instance\n");
+  dp = DDS_DomainParticipantFactory_create_participant (dpf, DDS_DOMAIN_ID_DEFAULT, DDS_PARTICIPANT_QOS_DEFAULT, NULL, DDS_STATUS_MASK_NONE);
+  if (dp == DDS_HANDLE_NIL)
+    error ("DDS_DomainParticipantFactory_create_participant\n");
+  register_default_types ();
   return 0;
 }
+
+#if ! PRE_V6_5
+int common_init_domainid (const char *argv0, DDS_DomainId_t domainid)
+{
+  save_argv0 (argv0);
+  if ((dpf = DDS_DomainParticipantFactory_get_instance ()) == NULL)
+    error ("DDS_DomainParticipantFactory_get_instance\n");
+  dp = DDS_DomainParticipantFactory_create_participant (dpf, domainid, DDS_PARTICIPANT_QOS_DEFAULT, NULL, DDS_STATUS_MASK_NONE);
+  if (dp == DDS_HANDLE_NIL)
+    error ("DDS_DomainParticipantFactory_create_participant\n");
+  register_default_types ();
+  return 0;
+}
+#endif
 
 void common_fini (void)
 {
