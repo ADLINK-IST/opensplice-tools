@@ -89,6 +89,7 @@ static int pid;
 static DDS_GuardCondition termcond;
 static unsigned nkeyvals = 1;
 static int once_mode = 0;
+static int extra_readers_at_end = 0;
 static int wait_hist_data = 0;
 static DDS_Duration_t wait_hist_data_timeout = { 0, 0 };
 static double dur = 0.0;
@@ -102,6 +103,7 @@ static unsigned print_metadata = PM_STATE;
 static unsigned print_chop = 0xffffffff;
 static int printtype = 0;
 static int print_final_take_notice = 1;
+static int print_tcp = 0;
 static DDS_Topic ddsi_control_topic = DDS_HANDLE_NIL;
 static DDS_Publisher ddsi_control_pub;
 static q_osplserModule_ddsi_controlDataWriter ddsi_control_wr;
@@ -244,7 +246,8 @@ static int open_tcpserver_sock (int port)
     perror ("listen()");
     exit (2); /* will kill any waiting threads */
   }
-  printf ("listening ... ");
+  if (print_tcp)
+    printf ("listening ... ");
   fflush (stdout);
   return fd;
 }
@@ -297,7 +300,7 @@ OPTIONS:\n\
                   numbers (x: exit 1 on receipt of out of sequence samples)\n\
                   (expecting N keys), \"zero-load\" mode or \"dump\" mode (which\n\
                   is differs from \"print\" primarily because it uses a data-\n\
-                  available trigger and reads all samples in read-mode(default:\n\
+                  available trigger and reads all samples in read-mode (default:\n\
                   p; pp, cp, dp are polling modes); set per-reader\n\
   -D DUR          run for DUR seconds\n\
   -M TO:U         wait for matching reader with user_data U and not owned\n\
@@ -331,6 +334,9 @@ OPTIONS:\n\
                     finaltake      print a \"final take\" notice before the\n\
                                    results of the optional final take just\n\
                                    before stopping\n\
+                  for tcp-server setup:\n\
+                    tcp            print when listening for or accepting a new\n\
+                                   connection\n\
                   default is \"nometa,state,fields,finalttake\".\n\
   -r              register instances (-wN mode only)\n\
   -R              use 'read' instead of 'take'\n\
@@ -368,7 +374,8 @@ OPTIONS:\n\
   -z N            topic size (affects KeyedSeq only)\n\
   -F              set line-buffered mode\n\
   -@              echo everything on duplicate writer (only for interactive)\n\
-  -* N            sleep for N seconds just before returning from main()\n\
+  -* [M:]N        sleep for M seconds just before deleteing participant and\n\
+                  N seconds just before returning from main()\n\
   -!              disable signal handlers\n\
 \n\
 %s\n\
@@ -406,6 +413,7 @@ CT;F;D  write DDSI control topic (if feature enabled in config)\n\
                  N defaults to 1\n\
         N        Nth writer of all non-automatic writers\n\
         NAME     unique writer of which topic name starts with NAME\n\
+Q     quit - clean termination, same as EOF, SIGTERM or SIGINT\n\
 )     (a closing parenthesis) kill pubsub itself with signal SIGKILL\n\
 Note: for K*, OU types, in the above N is always a decimal\n\
 integer (possibly negative); because the OneULong type has no key\n\
@@ -924,7 +932,7 @@ static int read_value (int fd, char *command, int *key, struct tstamp_t *tstamp,
         ungetc (c, stdin);
         return 1;
       }
-      case 'Y': case 'B': case 'E': case 'W': case ')':
+      case 'Y': case 'B': case 'E': case 'W': case ')': case 'Q':
         *command = (char) c;
         return 1;
       default:
@@ -1028,6 +1036,12 @@ static void getl_init_editline (struct getl_arg *arg, int fd)
   }
 }
 #endif
+
+static void getl_reset_input (struct getl_arg *arg, int fd)
+{
+  assert (!arg->use_editline);
+  arg->u.s.fd = fd;
+}
 
 static void getl_fini (struct getl_arg *arg)
 {
@@ -1496,7 +1510,8 @@ static int w_accept(int fd)
           exit (2);
         }
       }
-      printf ("to %s\n", inet_ntoa (saddr.sin_addr));
+      if (print_tcp)
+        printf ("to %s\n", inet_ntoa (saddr.sin_addr));
       return fdacc;
     }
   }
@@ -1557,6 +1572,9 @@ static void non_data_operation(char command, DDS_DataWriter wr)
         error ("DDS_Publisher_wait_for_acknowledgements: error %d\n", (int) result);
       break;
     }
+    case 'Q':
+      terminate();
+      break;
     case ')':
       kill (getpid (), SIGKILL);
       break;
@@ -1831,7 +1849,7 @@ static char *pub_do_nonarb(const struct writerspec *spec, int fdin, uint32_t *se
         else
           usleep ((unsigned) k);
         break;
-      case 'Y': case 'B': case 'E': case 'W': case ')':
+      case 'Y': case 'B': case 'E': case 'W': case ')': case 'Q':
         non_data_operation(command, spec->wr);
         break;
       case 'C':
@@ -1938,7 +1956,7 @@ static char *pub_do_arb_line(const struct writerspec *spec, const char *line)
           line += 1 + pos;
         }
         break;
-      case 'Y': case 'B': case 'E': case 'W': case ')':
+      case 'Y': case 'B': case 'E': case 'W': case ')': case 'Q':
         non_data_operation(*line++, spec->wr);
         break;
       case 'C':
@@ -2002,6 +2020,7 @@ static void *pubthread(void *vwrspecs)
       /* w_accept doesn't return on error, uses -1 to signal termination */
       if ((fdin = w_accept(fdservsock)) < 0)
         continue;
+      getl_reset_input(&getl_arg, fdin);
     }
     assert (fdin >= 0);
     do {
@@ -2051,7 +2070,8 @@ static void *pubthread(void *vwrspecs)
       close (fdin);
     if (fdservsock != -1)
     {
-      printf ("listening ... ");
+      if (print_tcp)
+        printf ("listening ... ");
       fflush (stdout);
     }
   } while (fdservsock != -1 && !termflag);
@@ -2142,6 +2162,9 @@ static void *subthread (void *vspec)
 
   if (wait_hist_data)
   {
+    printf("prewfh\n");
+    sleep(10);
+    printf("wfh\n");
     if ((result = DDS_DataReader_wait_for_historical_data (rd, &wait_hist_data_timeout)) != DDS_RETCODE_OK)
       error ("DDS_DataReader_wait_for_historical_data: %d (%s)\n", (int) result, dds_strerror (result));
   }
@@ -2699,6 +2722,8 @@ static void set_print_mode (const char *optarg)
       print_mode = TGPM_MULTILINE;
     else if (sscanf(tok, "chop:%u%n", &chop, &pos) == 1 && tok[pos] == 0)
       print_chop = chop;
+    else if (strcmp(tok, "tcp") == 0)
+      print_tcp = enable;
     else
     {
       static struct { const char *name; unsigned flag; } tab[] = {
@@ -2758,7 +2783,8 @@ int main (int argc, char *argv[])
   int want_reader = 1;
   int want_writer = 1;
   int disable_signal_handlers = 0;
-  unsigned sleep_at_end = 0;
+  unsigned sleep_at_end_1 = 0;
+  unsigned sleep_at_end_2 = 0;
   unsigned sleep_at_beginning = 0;
   pthread_t sigtid;
   pthread_t inptid;
@@ -2772,6 +2798,10 @@ int main (int argc, char *argv[])
   const char *wait_for_matching_reader_arg = NULL;
   struct spec *spec = NULL;
   struct wrspeclist *wrspecs = NULL;
+#if ! PRE_V6_5
+  /* the type changed from v5 to v6, but considering it is such a rarely used option making it dependent on >= 6.5 is more practical, extending its applicability is always possible later */
+  DDS_DomainId_t domainid = DDS_DOMAIN_ID_DEFAULT;
+#endif
   memset (&sigtid, 0, sizeof(sigtid));
   memset (&inptid, 0, sizeof(inptid));
 
@@ -2812,7 +2842,7 @@ int main (int argc, char *argv[])
   spec_sofar = 0;
   assert(specidx == 0);
 
-  while ((opt = getopt (argc, argv, "^:$!@*:FK:T:D:q:m:M:n:OP:rRs:S:U:W:w:z:")) != EOF)
+  while ((opt = getopt (argc, argv, "^:$!@*:f:FK:T:D:q:m:M:n:OP:rRs:S:U:W:w:z:")) != EOF)
   {
     switch (opt)
     {
@@ -2826,7 +2856,15 @@ int main (int argc, char *argv[])
         spec[specidx].wr.duplicate_writer_flag = 1;
         break;
       case '*':
-        sleep_at_end = (unsigned) atoi (optarg);
+        if (sscanf (optarg, "%u:%u%n", &sleep_at_end_1, &sleep_at_end_2, &pos) == 2 && optarg[pos] == 0)
+          ;
+        else if (sscanf (optarg, "%u%n", &sleep_at_end_2, &pos) == 1 && optarg[pos] == 0)
+          sleep_at_end_1 = 0;
+        else
+        {
+          fprintf (stderr, "-* %s: invalid sleep-at-end-setting\n", optarg);
+          exit (3);
+        }
         break;
       case 'M':
         if (sscanf(optarg, "%lf:%n", &wait_for_matching_reader_timeout, &pos) != 1)
@@ -2835,6 +2873,14 @@ int main (int argc, char *argv[])
           exit (3);
         }
         wait_for_matching_reader_arg = optarg + pos;
+        break;
+      case 'f':
+#if PRE_V6_5
+        fprintf (stderr, "setting domain id is not supported for OSPL versions pre v6.5\n");
+        exit (3);
+#else
+        domainid = atoi (optarg);
+#endif
         break;
       case 'F':
         setvbuf (stdout, (char *) NULL, _IOLBF, 0);
@@ -3018,7 +3064,10 @@ int main (int argc, char *argv[])
         spec[specidx].rd.use_take = 0;
         break;
       case '$':
-        spec[specidx].rd.do_final_take = 1;
+        if (!spec[specidx].rd.do_final_take)
+          spec[specidx].rd.do_final_take = 1;
+        else
+          extra_readers_at_end = 1;
         break;
       case 'r':
         spec[specidx].wr.register_instances = 1;
@@ -3186,7 +3235,11 @@ int main (int argc, char *argv[])
     }
   }
 
+#if PRE_V6_5
   common_init (argv[0]);
+#else
+  common_init_domainid (argv[0], domainid);
+#endif
   set_systemid_env ();
 
   if (sleep_at_beginning)
@@ -3440,6 +3493,20 @@ int main (int argc, char *argv[])
           exitcode = (uintptr_t) ret;
       }
     }
+    if (extra_readers_at_end)
+    {
+      /* FIXME: doesn't work for group coherent data */
+      printf ("extra-at-end:\n");
+      once_mode = 1;
+      for (i = 0; i <= specidx; i++)
+      {
+        qos = new_rdqos (sub, spec[i].cftp);
+        setqos_from_args (qos, nqreader, qreader);
+        spec[i].rd.rd = new_datareader_listener (qos, &rdlistener, rdstatusmask);
+        free_qos (qos);
+        subthread (&spec[i].rd);
+      }
+    }
   }
 
   if (!disable_signal_handlers)
@@ -3479,8 +3546,10 @@ int main (int argc, char *argv[])
       DDS_free(spec[i].wr.tpname);
   }
   DDS_free(termcond);
+  if (sleep_at_end_1)
+    sleep (sleep_at_end_1);
   common_fini ();
-  if (sleep_at_end)
-    sleep (sleep_at_end);
+  if (sleep_at_end_2)
+    sleep (sleep_at_end_2);
   return (int) exitcode;
 }
