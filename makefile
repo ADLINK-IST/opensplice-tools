@@ -125,6 +125,7 @@ endif
 
 # Target executables, each may have a bunch of IDL files ...
 TARGETS = pubsub$X lsbuiltin$X pingpong$X
+TARGETS += overheadtest$X
 IDL_common := testtype
 # ... and those really required per target ...
 IDL_pubsub := testtype ddsicontrol
@@ -133,6 +134,7 @@ IDL_fanout := testtype
 IDL_manysamples := testtype
 IDL_manyendpoints := testtype
 IDL_txnid_test := testtype
+IDL_overheadtest := testtype
 # ... and the set of all IDL files ($(sort) removes duplicates)
 IDLMODS := $(sort $(foreach x, common $(TARGETS), $(IDL_$(subst -,_,$x))))
 ifneq "$(OSPL_MAJOR)" "" # assume source tree in which case $OSPL_HOME/etc/idl may not have the req files 
@@ -181,6 +183,7 @@ manyendpoints$X: common.o porting.o
 txnid-test$X: common.o porting.o
 genreader$X: tglib.o common.o
 pingpong$X: common.o porting.o
+overheadtest$X: common.o
 
 # A little bit of a simplification: assume preprocessing foo.c needs
 # the output of the IDL preprocessor files of the IDL files listed in

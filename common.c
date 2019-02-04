@@ -73,6 +73,7 @@ DDS_TypeSupport ts_Keyed64 = DDS_OBJECT_NIL;
 DDS_TypeSupport ts_Keyed128 = DDS_OBJECT_NIL;
 DDS_TypeSupport ts_Keyed256 = DDS_OBJECT_NIL;
 DDS_TypeSupport ts_OneULong = DDS_OBJECT_NIL;
+DDS_TypeSupport ts_JustSeq = DDS_OBJECT_NIL;
 const char *saved_argv0;
 
 unsigned long long nowll (void)
@@ -342,6 +343,7 @@ static void register_default_types (void)
   ts_Keyed128 = register_type ("Keyed128");
   ts_Keyed256 = register_type ("Keyed256");
   ts_OneULong = register_type ("OneULong");
+  ts_JustSeq = register_type ("JustSeq");
 }
 
 int common_init (const char *argv0)
@@ -379,6 +381,7 @@ void common_fini (void)
   DDS_free (ts_Keyed128);
   DDS_free (ts_Keyed256);
   DDS_free (ts_OneULong);
+  DDS_free (ts_JustSeq);
   if ((rc = DDS_DomainParticipant_delete_contained_entities (dp)) != DDS_RETCODE_OK)
     error ("DDS_DomainParticipant_delete_contained_entities: %d (%s)\n", (int) rc, dds_strerror (rc));
   DDS_DomainParticipantFactory_delete_participant (dpf, dp);
@@ -593,6 +596,11 @@ DDS_Topic new_topic_Keyed256 (const char *name, const struct qos *a)
 DDS_Topic new_topic_OneULong (const char *name, const struct qos *a)
 {
   return new_topic (name, ts_OneULong, a);
+}
+
+DDS_Topic new_topic_JustSeq (const char *name, const struct qos *a)
+{
+  return new_topic (name, ts_JustSeq, a);
 }
 
 DDS_Publisher new_publisher (const struct qos *a, unsigned npartitions, const char **partitions)
@@ -980,7 +988,7 @@ void qos_reliability (struct qos *a, const char *arg)
     default:
       error ("reliability qos: %s: invalid\n", arg);
   }
-  if (qp->kind == DDS_RELIABLE_RELIABILITY_QOS && *argp == ':')
+  if (*argp == ':')
   {
     double max_blocking_time;
     int pos;
