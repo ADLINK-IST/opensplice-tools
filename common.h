@@ -24,6 +24,7 @@ extern DDS_TypeSupport ts_Keyed64;
 extern DDS_TypeSupport ts_Keyed128;
 extern DDS_TypeSupport ts_Keyed256;
 extern DDS_TypeSupport ts_OneULong;
+extern DDS_TypeSupport ts_JustSeq;
 extern const char *saved_argv0;
 extern const char *qos_arg_usagestr;
 
@@ -76,6 +77,7 @@ DDS_Topic new_topic_Keyed64 (const char *name, const struct qos *a);
 DDS_Topic new_topic_Keyed128 (const char *name, const struct qos *a);
 DDS_Topic new_topic_Keyed256 (const char *name, const struct qos *a);
 DDS_Topic new_topic_OneULong (const char *name, const struct qos *a);
+DDS_Topic new_topic_JustSeq (const char *name, const struct qos *a);
 DDS_DataWriter new_datawriter (const struct qos *a);
 DDS_DataReader new_datareader (const struct qos *a);
 DDS_DataWriter new_datawriter_listener (const struct qos *a, const struct DDS_DataWriterListener *l, DDS_StatusMask mask);

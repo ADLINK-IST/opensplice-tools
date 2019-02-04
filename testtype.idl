@@ -43,3 +43,9 @@ struct KeyedSeq
   sequence<octet> baggage;
 };
 #pragma keylist KeyedSeq keyval
+
+struct JustSeq
+{
+  sequence<octet> baggage;
+};
+#pragma keylist JustSeq
