@@ -2311,6 +2311,12 @@ static void *subthread (void *vspec)
           result = DDS_DataReader_read_w_condition (rd, mseq.any, iseq, spec->read_maxsamples, cond);
         }
 
+        {
+          DDS_ReturnCode_t end_access_result;
+          if (need_access && (end_access_result = DDS_Subscriber_end_access (sub)) != DDS_RETCODE_OK)
+            error ("DDS_Subscriber_end_access: %d (%s)\n", (int) end_access_result, dds_strerror (end_access_result));
+        }
+
         if (result != DDS_RETCODE_OK)
         {
           if (spec->polling && result == DDS_RETCODE_NO_DATA)
@@ -2321,9 +2327,6 @@ static void *subthread (void *vspec)
             printf ("%s: %d (%s) on rdcond%s\n", spec->use_take ? "take" : "read", (int) result, dds_strerror (result), (cond == rdcondA) ? "A" : (cond == rdcondD) ? "D" : "?");
           continue;
         }
-
-        if (need_access && (result = DDS_Subscriber_end_access (sub)) != DDS_RETCODE_OK)
-          error ("DDS_Subscriber_end_access: %d (%s)\n", (int) result, dds_strerror (result));
 
         tnow = nowll ();
 
