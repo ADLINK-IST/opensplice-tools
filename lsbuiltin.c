@@ -542,7 +542,7 @@ void print_participant (const DDS_SampleInfo *info, const DDS_ParticipantBuiltin
   if (!key_filter_matches(&key_filter_regex, d->key))
     return;
   print_info (info, hdr);
-  printf ("PARTICIPANT:\n");
+  printf ("PARTICIPANT [ih = %llx]:\n", (unsigned long long) info->instance_handle);
   printf ("  key = %u:%u:%u\n", (unsigned) d->key[0], (unsigned) d->key[1], (unsigned) d->key[2]);
   if (!valid_data)
     return;
@@ -556,7 +556,7 @@ void print_subscription (const DDS_SampleInfo *info, const DDS_SubscriptionBuilt
   if (valid_data && !(topic_filter_matches(d->topic_name) && key_filter_matches(&participant_key_filter_regex, d->participant_key)))
     return;
   print_info (info, hdr);
-  printf ("SUBSCRIPTION:\n");
+  printf ("SUBSCRIPTION [ih = %llx]:\n", (unsigned long long) info->instance_handle);
   printf ("  key = %u:%u:%u\n", (unsigned) d->key[0], (unsigned) d->key[1], (unsigned) d->key[2]);
   if (!valid_data)
     return;
@@ -585,7 +585,7 @@ void print_publication (const DDS_SampleInfo *info, const DDS_PublicationBuiltin
   if (valid_data && !(topic_filter_matches(d->topic_name) && key_filter_matches(&participant_key_filter_regex, d->participant_key)))
     return;
   print_info (info, hdr);
-  printf ("PUBLICATION:\n");
+  printf ("PUBLICATION [ih = %llx]:\n", (unsigned long long) info->instance_handle);
   printf ("  key = %u:%u:%u\n", (unsigned) d->key[0], (unsigned) d->key[1], (unsigned) d->key[2]);
   if (!valid_data)
     return;
@@ -614,7 +614,7 @@ void print_cmparticipant (const DDS_SampleInfo *info, const DDS_CMParticipantBui
   if (!key_filter_matches(&key_filter_regex, d->key))
     return;
   print_info (info, hdr);
-  printf ("CMPARTICIPANT:\n");
+  printf ("CMPARTICIPANT [ih = %llx]:\n", (unsigned long long) info->instance_handle);
   printf ("  key = %u:%u:%u\n", (unsigned) d->key[0], (unsigned) d->key[1], (unsigned) d->key[2]);
   if (!valid_data)
     return;
@@ -630,7 +630,7 @@ void print_cmpublisher (const DDS_SampleInfo *info, const DDS_CMPublisherBuiltin
   if (valid_data && !key_filter_matches(&participant_key_filter_regex, d->participant_key))
     return;
   print_info (info, hdr);
-  printf ("CMPUBLISHER:\n");
+  printf ("CMPUBLISHER [ih = %llx]:\n", (unsigned long long) info->instance_handle);
   printf ("  key = %u:%u:%u\n", (unsigned) d->key[0], (unsigned) d->key[1], (unsigned) d->key[2]);
   if (!valid_data)
     return;
@@ -648,7 +648,7 @@ void print_cmsubscriber (const DDS_SampleInfo *info, const DDS_CMSubscriberBuilt
   if (valid_data && !key_filter_matches(&participant_key_filter_regex, d->participant_key))
     return;
   print_info (info, hdr);
-  printf ("CMSUBSCRIBER:\n");
+  printf ("CMSUBSCRIBER [ih = %llx]:\n", (unsigned long long) info->instance_handle);
   printf ("  key = %u:%u:%u\n", (unsigned) d->key[0], (unsigned) d->key[1], (unsigned) d->key[2]);
   if (!valid_data)
     return;
@@ -667,7 +667,7 @@ void print_cmdatawriter (const DDS_SampleInfo *info, const DDS_CMDataWriterBuilt
   if (valid_data && !key_filter_matches(&group_key_filter_regex, d->publisher_key))
     return;
   print_info (info, hdr);
-  printf ("CMDATAWRITER:\n");
+  printf ("CMDATAWRITER [ih = %llx]:\n", (unsigned long long) info->instance_handle);
   printf ("  key = %u:%u:%u\n", (unsigned) d->key[0], (unsigned) d->key[1], (unsigned) d->key[2]);
   if (!valid_data)
     return;
@@ -686,7 +686,7 @@ void print_cmdatareader (const DDS_SampleInfo *info, const DDS_CMDataReaderBuilt
   if (valid_data && !key_filter_matches(&group_key_filter_regex, d->subscriber_key))
     return;
   print_info (info, hdr);
-  printf ("CMDATAREADER:\n");
+  printf ("CMDATAREADER [ih = %llx]:\n", (unsigned long long) info->instance_handle);
   printf ("  key = %u:%u:%u\n", (unsigned) d->key[0], (unsigned) d->key[1], (unsigned) d->key[2]);
   if (!valid_data)
     return;

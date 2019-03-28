@@ -413,6 +413,7 @@ CT;F;D  write DDSI control topic (if feature enabled in config)\n\
                  N defaults to 1\n\
         N        Nth writer of all non-automatic writers\n\
         NAME     unique writer of which topic name starts with NAME\n\
+P     print get_discovered_participants result\n\
 Q     quit - clean termination, same as EOF, SIGTERM or SIGINT\n\
 )     (a closing parenthesis) kill pubsub itself with signal SIGKILL\n\
 Note: for K*, OU types, in the above N is always a decimal\n\
@@ -1572,6 +1573,19 @@ static void non_data_operation(char command, DDS_DataWriter wr)
         error ("DDS_Publisher_wait_for_acknowledgements: error %d\n", (int) result);
       break;
     }
+    case 'P': {
+      DDS_Subscriber sub = DDS_DomainParticipant_get_builtin_subscriber (dp);
+      DDS_DataReader rd = DDS_Subscriber_lookup_datareader (sub, "DCPSParticipant");
+      DDS_Subscriber_delete_datareader (sub, rd);
+      DDS_InstanceHandleSeq *hs = DDS_InstanceHandleSeq__alloc ();
+      DDS_ReturnCode_t rc = DDS_DomainParticipant_get_discovered_participants (dp, hs);
+      if (rc != DDS_RETCODE_OK)
+        printf ("X %d :(\n", rc);
+      for (int i = 0; i < (int) hs->_length; i++)
+        printf ("X %llx\n", hs->_buffer[i]);
+      DDS_free (hs);
+      break;
+    }
     case 'Q':
       terminate();
       break;
@@ -1849,7 +1863,7 @@ static char *pub_do_nonarb(const struct writerspec *spec, int fdin, uint32_t *se
         else
           usleep ((unsigned) k);
         break;
-      case 'Y': case 'B': case 'E': case 'W': case ')': case 'Q':
+      case 'Y': case 'B': case 'E': case 'W': case ')': case 'Q': case 'P':
         non_data_operation(command, spec->wr);
         break;
       case 'C':
@@ -1956,7 +1970,7 @@ static char *pub_do_arb_line(const struct writerspec *spec, const char *line)
           line += 1 + pos;
         }
         break;
-      case 'Y': case 'B': case 'E': case 'W': case ')': case 'Q':
+      case 'Y': case 'B': case 'E': case 'W': case ')': case 'Q': case 'P':
         non_data_operation(*line++, spec->wr);
         break;
       case 'C':
@@ -2297,6 +2311,12 @@ static void *subthread (void *vspec)
           result = DDS_DataReader_read_w_condition (rd, mseq.any, iseq, spec->read_maxsamples, cond);
         }
 
+        {
+          DDS_ReturnCode_t end_access_result;
+          if (need_access && (end_access_result = DDS_Subscriber_end_access (sub)) != DDS_RETCODE_OK)
+            error ("DDS_Subscriber_end_access: %d (%s)\n", (int) end_access_result, dds_strerror (end_access_result));
+        }
+
         if (result != DDS_RETCODE_OK)
         {
           if (spec->polling && result == DDS_RETCODE_NO_DATA)
@@ -2307,9 +2327,6 @@ static void *subthread (void *vspec)
             printf ("%s: %d (%s) on rdcond%s\n", spec->use_take ? "take" : "read", (int) result, dds_strerror (result), (cond == rdcondA) ? "A" : (cond == rdcondD) ? "D" : "?");
           continue;
         }
-
-        if (need_access && (result = DDS_Subscriber_end_access (sub)) != DDS_RETCODE_OK)
-          error ("DDS_Subscriber_end_access: %d (%s)\n", (int) result, dds_strerror (result));
 
         tnow = nowll ();
 
